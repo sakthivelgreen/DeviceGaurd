@@ -1,0 +1,200 @@
+package,category,name,note
+# DeviceGuard MDM bloatware list - Author: Sakthivel J
+# category: SAFE = safe to disable/remove, CAUTION = removable but you lose a feature, KEEP = needed by the system (danger)
+# Packages not listed are treated as UNKNOWN (leave them alone). Overlays, providers and resources are always KEEP.
+com.facebook.appmanager,SAFE,Facebook App Manager,Preinstalled Facebook updater
+com.facebook.services,SAFE,Facebook Services,Preinstalled Facebook background service
+com.facebook.system,SAFE,Facebook App Installer,Preinstalled Facebook installer
+com.vivo.appstore,SAFE,V-Appstore,vivo app store (ads + push installs)
+com.vivo.browser,SAFE,vivo Browser,Can get around Chrome rules - remove or hide
+com.android.browser,SAFE,Browser (AOSP),Old built-in browser - can get around Chrome rules
+com.vivo.hiboard,SAFE,Jovi Smart Panel,Swipe-right panel on the home screen
+com.vivo.magazine,SAFE,Lock Screen Magazine,Lock screen wallpaper carousel with ads
+com.vivo.game,SAFE,vivo Game Center,Game store
+com.vivo.gamecube,SAFE,Game Cube,Game launcher
+com.vivo.gamepad,SAFE,Gamepad,Gamepad support for vivo games
+com.vivo.website,SAFE,vivo Website,Shortcut to vivo website / community
+com.vivo.unionpay,SAFE,UnionPay,Chinese payment service - unused in India
+com.yozo.vivo.office,SAFE,Yozo Office,Preinstalled office suite
+com.vivo.cardstore,SAFE,Card Store,Widget card store
+com.vivo.hybrid,SAFE,Quick Apps,Instant apps engine (often shows ads)
+com.vivo.nps,SAFE,vivo Survey,Satisfaction survey popups
+com.vivo.desktopstickers,SAFE,Desktop Stickers,Home screen stickers
+com.vivo.countdownwidget,SAFE,Countdown Widget,Home screen widget
+com.vivo.timerwidget,SAFE,Timer Widget,Home screen widget
+com.vivo.healthwidget,SAFE,Health Widget,Home screen widget
+com.vivo.musicwidgetmix,SAFE,Music Widget,Home screen widget
+com.vivo.musicmixcard,SAFE,Music Card,Home screen card
+com.vivo.doubletimezoneclock,SAFE,Dual Clock Widget,Home screen widget
+com.vivo.livewallpaper.behavior,SAFE,Live Wallpaper (Behavior),Only needed if you use vivo live wallpapers
+com.vivo.livewallpaper.behavior.resources,SAFE,Live Wallpaper resources,Only needed if you use vivo live wallpapers
+com.vivo.livewallpaper.behaviormountain,SAFE,Live Wallpaper (Mountain),Only needed if you use vivo live wallpapers
+com.vivo.livewallpaper.box,SAFE,Live Wallpaper (Box),Only needed if you use vivo live wallpapers
+com.vivo.livewallpaper.boxconfig,SAFE,Live Wallpaper config,Only needed if you use vivo live wallpapers
+com.vivo.stepcount,SAFE,Step Counter,vivo step counting
+com.vivo.compass,SAFE,Compass,Compass app
+com.vivo.videoeditor,SAFE,Video Editor,vivo video editor
+com.vivo.video.floating,SAFE,Floating Video,Picture-in-picture video helper
+com.vivo.fuelsummary,SAFE,Usage Summary,Monthly usage report
+com.vivo.tws.vivotws,SAFE,vivo TWS,vivo earbuds companion
+com.android.bbkmusic,SAFE,i Music,vivo music player
+com.android.VideoPlayer,SAFE,Video Player,Preinstalled video player (VLC installed)
+com.android.egg,SAFE,Android Easter Egg,Version easter egg
+com.android.email.partnerprovider,SAFE,Email partner provider,Unused stub
+com.android.bookmarkprovider,SAFE,Bookmark provider,Old browser bookmarks
+com.google.android.apps.tachyon,SAFE,Google Meet,Video calls
+com.google.android.youtube,SAFE,YouTube,Video app (block or remove for kids)
+com.google.android.feedback,SAFE,Market Feedback Agent,Crash feedback sender
+com.google.android.printservice.recommendation,SAFE,Print Service Recommendation,Suggests print plugins
+com.google.ar.core,SAFE,Google Play Services for AR,Only for AR apps
+com.google.audio.hearing.visualization.accessibility.scribe,SAFE,Live Transcribe,Accessibility captioning
+com.google.android.accessibility.switchaccess,SAFE,Switch Access,Accessibility switch control
+com.google.android.gms.location.history,SAFE,Location History,Google Timeline helper
+com.google.ambient.streaming,SAFE,Ambient Streaming,Cast/stream helper
+com.microsoft.appmanager,SAFE,Link to Windows,Phone Link with Windows PC
+com.microsoft.deviceintegrationservice,SAFE,Microsoft Device Integration,Phone Link helper
+com.microsoftsdk.crossdeviceservicebroker,SAFE,Cross Device Service,Phone Link helper
+com.vivo.pcsuite,SAFE,vivo PC Suite,PC connection tool
+com.vivo.upnpserver,SAFE,UPnP Server,DLNA media sharing
+com.ringclip,SAFE,Ring Clip,Ringtone cutter
+com.vivo.assistant,SAFE,Jovi Assistant,vivo voice/smart assistant
+com.vivo.assistantfunction,SAFE,Jovi Functions,vivo assistant helper
+com.vivo.simplelauncher,SAFE,Simple Mode,Elderly/simple home screen
+com.mediatek.ygps,SAFE,YGPS,MediaTek GPS test tool
+com.mediatek.lbs.em2.ui,SAFE,Location Engineer Mode,MediaTek test tool
+com.mediatek.mdmlsample,SAFE,MDML Sample,MediaTek modem logging sample
+com.android.traceur,SAFE,System Tracing,Developer tracing tool
+com.android.dynsystem,SAFE,Dynamic System Updates,Developer GSI installer
+com.vivo.smartoffice,CAUTION,Smart Office,Document scanner / office tools
+com.vivo.notes,CAUTION,Notes,Back up notes first
+com.vivo.soundrecorder,CAUTION,Recorder,Voice recorder
+com.vivo.calculator,CAUTION,Calculator,Install another calculator first
+com.vivo.weather,CAUTION,Weather,Weather app
+com.vivo.widgetweather,CAUTION,Weather Widget,Home screen weather
+com.vivo.weather.provider,CAUTION,Weather provider,Feeds weather to lock screen and widgets
+com.vivo.exhealth,CAUTION,vivo Health,Health tracking
+com.vivo.ai.agent,CAUTION,vivo AI Agent,AI features (summaries, smart replies)
+com.vivo.globalsearch,CAUTION,Global Search,Swipe-down search on the home screen
+com.vivo.share,CAUTION,vivo Share,Nearby sharing between phones
+com.vivo.easyshare,CAUTION,EasyShare,Phone clone / transfer - useful after a reset
+com.vivo.floatingball,CAUTION,Floating Ball,Assistive touch button
+com.vivo.smartshot,CAUTION,Smart Screenshot,Long / scroll screenshots
+com.vivo.minscreen,CAUTION,Mini Window,Floating mini windows
+com.vivo.doubleinstance,CAUTION,App Clone,Removing it disables App Clone (also helps Device Owner)
+com.vivo.xspace,CAUTION,Private Space helper,Removing it disables vivo private space
+com.vivo.privacylauncher,CAUTION,Privacy Launcher,Private space launcher
+com.vivo.gamewatch,CAUTION,Ultra Game Mode,Game performance mode
+com.vivo.numbermark,CAUTION,Number Marking,Spam caller identification
+com.vivo.imanager,CAUTION,iManager,Phone cleaner / security manager
+com.vivo.safecenter,CAUTION,Security Center,App permission & security manager
+com.bbk.cloud,CAUTION,vivo Cloud,vivo cloud backup
+com.vivo.backuprestore,CAUTION,Backup & Restore,Local backup tool
+com.vivo.pushservice,CAUTION,vivo Push,Notifications for vivo apps
+com.vivo.cota,CAUTION,Carrier OTA,Carrier config updates
+com.vivo.omacp,CAUTION,OMA CP,Carrier settings messages (APN)
+com.android.stk,CAUTION,SIM Toolkit,Carrier SIM menu
+com.android.DeviceAsWebcam,CAUTION,Webcam mode,Use phone as a PC webcam
+com.mediatek.miravision.ui,CAUTION,MiraVision,Display color tuning
+com.google.android.apps.wellbeing,CAUTION,Digital Wellbeing,Screen time / app timers
+com.google.android.marvin.talkback,CAUTION,TalkBack,Screen reader (accessibility)
+com.google.android.projection.gearhead,CAUTION,Android Auto,Car connectivity
+com.google.android.apps.restore,CAUTION,Google Restore,Needed to restore backups after a reset
+com.google.android.apps.photos,CAUTION,Google Photos,Photo backup
+com.google.android.apps.maps,CAUTION,Google Maps,Maps and location sharing
+com.google.android.gm,CAUTION,Gmail,Email
+com.google.android.calendar,CAUTION,Google Calendar,Calendar
+com.google.android.apps.nbu.files,CAUTION,Files by Google,File manager
+com.android.filemanager,CAUTION,vivo File Manager,File manager - keep at least one
+com.google.android.googlequicksearchbox,CAUTION,Google app,Search, Assistant, Discover
+com.google.android.as,CAUTION,Android System Intelligence,Smart text selection, live caption
+com.google.android.tts,CAUTION,Speech Services,Text-to-speech (Maps voice, accessibility)
+com.bbk.account,CAUTION,vivo Account,Themes, cloud and Find My Phone need it
+com.bbk.theme,CAUTION,Themes,Wallpapers & themes - removal can reset the look
+com.android.camera,CAUTION,Camera,Only camera app - keep unless you use another
+com.vivo.gallery,CAUTION,Albums,Gallery - keep at least one
+com.android.deskclock,CAUTION,Clock,Alarms
+com.android.chrome,KEEP,Chrome,Needed for DeviceGuard Chrome rules
+com.android.vending,KEEP,Play Store,Control it from Apps & Play Store instead
+com.google.android.apps.messaging,KEEP,Messages,Default SMS app - OTPs stop working
+com.google.android.inputmethod.latin,KEEP,Gboard,Only keyboard - removing locks you out of typing
+com.google.android.gms,KEEP,Google Play Services,Core Google framework
+com.google.android.gsf,KEEP,Google Services Framework,Core Google framework
+com.google.android.webview,KEEP,Android System WebView,Many apps break without it
+com.google.android.permissioncontroller,KEEP,Permission Controller,Core system
+com.google.android.packageinstaller,KEEP,Package Installer,Needed to install apps
+com.google.android.documentsui,KEEP,Files (system picker),File picker for all apps
+com.google.android.setupwizard,KEEP,Setup Wizard,Needed after reset
+com.google.android.ext.services,KEEP,Android Services Library,Core system
+com.google.android.providers.media.module,KEEP,Media Storage,Core system
+com.google.android.photopicker,KEEP,Photo Picker,Core system
+com.google.android.cellbroadcastreceiver,KEEP,Emergency Alerts,Government emergency alerts
+com.google.android.cellbroadcastservice,KEEP,Emergency Alerts service,Government emergency alerts
+com.google.android.captiveportallogin,KEEP,Captive Portal Login,Wi-Fi login pages
+com.google.android.networkstack,KEEP,Network Stack,Core networking
+com.google.android.networkstack.tethering,KEEP,Tethering,Hotspot
+com.google.android.healthconnect.controller,KEEP,Health Connect,Core system
+com.google.android.rkpdapp,KEEP,Key Provisioning,Security / attestation
+com.google.android.sdksandbox,KEEP,SDK Sandbox,Core system
+com.google.android.configupdater,KEEP,Config Updater,Security updates
+com.google.android.partnersetup,KEEP,Google Partner Setup,Core Google setup
+com.google.android.onetimeinitializer,KEEP,One Time Init,Core Google setup
+com.google.android.adservices.api,KEEP,Ad Services API,Core system module
+com.google.android.ondevicepersonalization.services,KEEP,On-device Personalization,Core system module
+com.google.android.federatedcompute,KEEP,Federated Compute,Core system module
+com.google.android.appsearch.apk,KEEP,AppSearch,Core system module
+com.google.android.as.oss,KEEP,Private Compute Services,Core system module
+com.google.android.modulemetadata,KEEP,Module Metadata,Core system module
+com.google.android.ext.shared,KEEP,Shared Library,Core system module
+com.google.android.signature,KEEP,Signature,Core system module
+com.google.android.gms.supervision,KEEP,Family Link Supervision,Parental controls framework
+com.android.managedprovisioning,KEEP,Work Setup,Needed for Device Owner / MDM
+com.android.launcher3,KEEP,Launcher,Home screen
+com.android.bbk.lockscreen3,KEEP,Lock Screen,vivo lock screen
+com.android.systemui,KEEP,System UI,Status bar & navigation
+com.android.settings,KEEP,Settings,Core system
+com.android.phone,KEEP,Phone services,Calls & mobile network
+com.android.incallui,KEEP,In-call UI,Call screen
+com.android.contacts,KEEP,Contacts / Dialer,Calls
+com.android.server.telecom,KEEP,Telecom,Calls
+com.android.mms.service,KEEP,MMS service,Messaging
+com.android.bluetooth,KEEP,Bluetooth,Core system
+com.android.shell,KEEP,Shell,Needed for ADB
+com.android.externalstorage,KEEP,External Storage,Core system
+com.android.intentresolver,KEEP,Share sheet,Core system
+com.android.credentialmanager,KEEP,Credential Manager,Passwords & passkeys
+com.android.keychain,KEEP,Key Chain,Certificates
+com.android.certinstaller,KEEP,Certificate Installer,Certificates
+com.android.se,KEEP,Secure Element,NFC payments
+com.android.location.fused,KEEP,Fused Location,Location
+com.android.carrierconfig,KEEP,Carrier Config,Mobile network
+com.android.emergency,KEEP,Emergency info,Emergency
+com.android.vpndialogs,KEEP,VPN dialogs,Needed for the VPN filter
+com.android.printspooler,KEEP,Print Spooler,Printing (Epson Print)
+com.android.mtp,KEEP,MTP Host,USB file transfer
+com.trustonic.teeservice,KEEP,TEE Service,Fingerprint and secure payments
+com.bbk.updater,KEEP,System Update,vivo OTA updates
+com.vivo.setupwizard,KEEP,vivo Setup Wizard,Needed after reset
+com.vivo.daemonService,KEEP,vivo Daemon,Core vivo system
+com.vivo.abe,KEEP,vivo ABE,Core vivo system
+com.vivo.pem,KEEP,Power Manager,Battery management
+com.vivo.sps,KEEP,vivo SPS,Core vivo system
+com.vivo.epm,KEEP,vivo EPM,Core vivo system
+com.vivo.devicepower,KEEP,Device Power,Battery management
+com.vivo.frameworkui,KEEP,Framework UI,Core vivo system
+com.vivo.systemuiplugin,KEEP,System UI plugin,Status bar
+com.vivo.recents,KEEP,Recents,Recent apps screen
+com.vivo.faceunlock,KEEP,Face Unlock,Biometrics
+com.vivo.faceui,KEEP,Face UI,Biometrics
+com.vivo.fingerprint,KEEP,Fingerprint,Biometrics
+com.vivo.fingerprintui,KEEP,Fingerprint UI,Biometrics
+com.vivo.fingerprintvit,KEEP,Fingerprint test,Biometrics
+com.bbk.SuperPowerSave,KEEP,Super Power Saving,Battery
+com.iqoo.powersaving,KEEP,Power Saving,Battery
+com.mediatek.ims,KEEP,MediaTek IMS,VoLTE calls
+com.mediatek.telephony,KEEP,MediaTek Telephony,Calls & network
+com.mediatek.gbaservice,KEEP,GBA service,Mobile network auth
+com.mediatek.mdmconfig,KEEP,Modem config,Mobile network
+com.mediatek.capctrl.service,KEEP,MediaTek CapCtrl,Core system
+com.mediatek.datachannel.service,KEEP,Data channel,VoLTE
+com.mediatek.atci.service,KEEP,ATCI service,Modem
+com.mediatek,KEEP,MediaTek framework,Core system
