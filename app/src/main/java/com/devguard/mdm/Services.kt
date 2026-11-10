@@ -33,24 +33,41 @@ class DnsVpnService : VpnService() {
         private const val DNS_IP = "10.111.222.53"
 
         @Volatile private var blocked: Set<String> = emptySet()
+        @Volatile private var office: Set<String> = emptySet()
         @Volatile private var upstreams: List<String> = listOf("1.1.1.1", "8.8.8.8")
+        @Volatile private var dohUrl: String? = null
 
         fun reload(c: Context) {
             blocked = Prefs.domains(c).map { it.lowercase() }.toSet()
-            upstreams = if (Prefs.familyDns(c)) listOf("1.1.1.3", "1.0.0.3") else listOf("1.1.1.1", "8.8.8.8")
+            office = Prefs.officeDomains(c).map { it.lowercase() }.toSet()
+            val host = Prefs.privateDnsHost(c)
+            if (SmartDns.fallbackActive(c) && host != null) {
+                // Backup mode: same filter as Private DNS, but over HTTPS (port 443) which offices rarely block.
+                dohUrl = SmartDns.dohUrl(host)
+                upstreams = SmartDns.plainBackup(host)
+            } else {
+                dohUrl = null
+                upstreams = if (Prefs.familyDns(c)) listOf("1.1.1.3", "1.0.0.3") else listOf("1.1.1.1", "8.8.8.8")
+            }
         }
 
-        /** Matches the domain itself and every subdomain of a blocked entry. */
-        fun isBlocked(name: String): Boolean {
+        /** True if the VPN should be running (manual VPN filter, or Smart DNS backup mode). */
+        fun shouldRun(c: Context) = Prefs.webBlock(c) || SmartDns.fallbackActive(c)
+
+        private fun matches(name: String, set: Set<String>): Boolean {
             var n = name.lowercase().trimEnd('.')
             while (n.isNotEmpty()) {
-                if (n in blocked) return true
+                if (n in set) return true
                 val i = n.indexOf('.')
                 if (i < 0) return false
                 n = n.substring(i + 1)
             }
             return false
         }
+
+        /** Matches the domain itself and every subdomain of a blocked entry. */
+        fun isBlocked(name: String) = matches(name, blocked)
+        fun isOffice(name: String) = matches(name, office)
     }
 
     private var tun: ParcelFileDescriptor? = null
@@ -58,7 +75,7 @@ class DnsVpnService : VpnService() {
     private var pool: ExecutorService? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP || !Prefs.webBlock(this)) {
+        if (intent?.action == ACTION_STOP || !shouldRun(this)) {
             stopVpn()
             stopSelf()
             return START_NOT_STICKY
@@ -71,14 +88,16 @@ class DnsVpnService : VpnService() {
     @Synchronized
     private fun startVpn() {
         if (tun != null) return
-        val pfd = Builder()
+        val b = Builder()
             .setSession("DeviceGuard web filter")
             .setMtu(4500)
             .addAddress("10.111.222.1", 32)
             .addRoute(DNS_IP, 32)
             .addDnsServer(DNS_IP)
             .setBlocking(true)
-            .establish() ?: return
+        // DeviceGuard's own traffic (DoH lookups, network checks) goes straight out, not into its own filter.
+        runCatching { b.addDisallowedApplication(packageName) }
+        val pfd = b.establish() ?: return
         tun = pfd
         val p = Executors.newFixedThreadPool(8)
         pool = p
@@ -119,7 +138,11 @@ class DnsVpnService : VpnService() {
             if (len < 12) return
             val q = p.copyOfRange(ihl + 8, ihl + 8 + len)
             val (name, qEnd) = question(q) ?: return
-            val resp = if (isBlocked(name)) nxdomain(q, qEnd) else (forward(q) ?: return)
+            val resp = when {
+                isBlocked(name) -> nxdomain(q, qEnd)
+                isOffice(name) -> forwardLocal(q) ?: return            // split DNS: office intranet names
+                else -> dohUrl?.let { doh(q, it) } ?: forward(q) ?: return
+            }
             val pkt = wrap(p, ihl, resp)
             synchronized(out) { out.write(pkt) }
         } catch (_: Exception) {
@@ -149,6 +172,40 @@ class DnsVpnService : VpnService() {
         r[3] = 0x83.toByte()                                // RA=1, RCODE=NXDOMAIN
         put16(r, 4, 1); put16(r, 6, 0); put16(r, 8, 0); put16(r, 10, 0)
         return r
+    }
+
+    /** DNS-over-HTTPS (RFC 8484, POST application/dns-message). */
+    private fun doh(q: ByteArray, url: String): ByteArray? = runCatching {
+        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        conn.requestMethod = "POST"
+        conn.doOutput = true
+        conn.connectTimeout = 4000
+        conn.readTimeout = 4000
+        conn.setRequestProperty("Content-Type", "application/dns-message")
+        conn.setRequestProperty("Accept", "application/dns-message")
+        conn.outputStream.use { it.write(q) }
+        if (conn.responseCode != 200) null else conn.inputStream.use { it.readBytes() }
+    }.getOrNull()
+
+    /** Sends the query to the current network's own DNS servers (office DNS), for intranet names. */
+    private fun forwardLocal(q: ByteArray): ByteArray? {
+        val cm = getSystemService(android.net.ConnectivityManager::class.java)
+        val servers = cm.activeNetwork?.let { cm.getLinkProperties(it)?.dnsServers } ?: return null
+        for (server in servers) {
+            try {
+                DatagramSocket().use { s ->
+                    protect(s)
+                    s.soTimeout = 3000
+                    s.send(DatagramPacket(q, q.size, server, 53))
+                    val rb = ByteArray(4096)
+                    val dp = DatagramPacket(rb, rb.size)
+                    s.receive(dp)
+                    return rb.copyOf(dp.length)
+                }
+            } catch (_: Exception) {
+            }
+        }
+        return null
     }
 
     private fun forward(q: ByteArray): ByteArray? {
@@ -193,7 +250,9 @@ class DnsVpnService : VpnService() {
 class GuardService : Service() {
     companion object {
         private const val CHANNEL = "guard"
-        fun needed(c: Context) = Prefs.approvalMode(c) || Prefs.blockedPkgs(c).isNotEmpty()
+        fun needed(c: Context) = Prefs.approvalMode(c) || Prefs.blockedPkgs(c).isNotEmpty() ||
+            Prefs.getFlag(c, Prefs.CHROME_ONLY) || SmartDns.enabled(c) || SmartDns.fallbackActive(c) ||
+            (Prefs.privateDnsHost(c) != null && PrivateDns.canWrite(c))
         fun start(c: Context) { c.startForegroundService(Intent(c, GuardService::class.java)) }
         /** Start or stop the watcher depending on current settings. */
         fun refresh(c: Context) {
@@ -206,6 +265,7 @@ class GuardService : Service() {
         override fun onReceive(c: Context, i: Intent) {
             val pkg = i.data?.schemeSpecificPart ?: return
             if (Blocklist.onInstalled(c, pkg)) return
+            if (ChromePolicy.onInstalled(c, pkg)) return
             if (i.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
             Approval.onInstalled(c, pkg)
         }
@@ -220,23 +280,78 @@ class GuardService : Service() {
         val n = Notification.Builder(this, CHANNEL)
             .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle("DeviceGuard MDM is active")
-            .setContentText("Watching app installs")
+            .setContentText("Enforcing device policies")
             .setOngoing(true)
             .build()
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         else startForeground(1, n)
         val f = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, f, RECEIVER_EXPORTED) else registerReceiver(receiver, f)
-        Thread { Blocklist.sweep(this); Approval.sweep(this) }.start()
+        Thread {
+            Blocklist.sweep(this)
+            if (Prefs.getFlag(this, Prefs.CHROME_ONLY)) ChromePolicy.otherBrowsers(this).forEach { ChromePolicy.onInstalled(this, it) }
+            Approval.sweep(this)
+        }.start()
+
+        // Private DNS lock: revert any edit (vivo Settings ignores the "Lock Private DNS" restriction).
+        for (key in listOf("private_dns_mode", "private_dns_specifier")) {
+            contentResolver.registerContentObserver(android.provider.Settings.Global.getUriFor(key), false, dnsObserver)
+        }
+        PrivateDns.enforce(this)
+
+        // Smart DNS: check every network the moment it connects or changes.
+        runCatching { connectivity.registerDefaultNetworkCallback(netCallback) }
+    }
+
+    // ---- Smart DNS network watcher ----
+    private val connectivity by lazy { getSystemService(android.net.ConnectivityManager::class.java) }
+    private val netExec = Executors.newSingleThreadExecutor()
+    private val netHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private var pendingCheck: Runnable? = null
+
+    private fun scheduleCheck(n: android.net.Network, delayMs: Long) {
+        pendingCheck?.let { netHandler.removeCallbacks(it) }
+        val r = Runnable { netExec.execute { runCatching { SmartDns.check(this, n) } } }
+        pendingCheck = r
+        netHandler.postDelayed(r, delayMs)
+    }
+
+    private val netCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) = scheduleCheck(network, 300)
+        override fun onLinkPropertiesChanged(network: android.net.Network, lp: android.net.LinkProperties) = scheduleCheck(network, 800)
+        override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) = scheduleCheck(network, 800)
+    }
+
+    private val dnsObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            if (PrivateDns.enforce(this@GuardService)) notifyDnsLocked()
+        }
+    }
+
+    private fun notifyDnsLocked() {
+        val nm = getSystemService(NotificationManager::class.java)
+        nm.createNotificationChannel(NotificationChannel("dnslock", "Private DNS lock", NotificationManager.IMPORTANCE_HIGH))
+        val n = Notification.Builder(this, "dnslock")
+            .setSmallIcon(R.drawable.ic_shield)
+            .setContentTitle("Private DNS is locked")
+            .setContentText("Your administrator set this filter. The change was undone.")
+            .setAutoCancel(true)
+            .build()
+        runCatching { nm.notify(42, n) }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!needed(this)) { stopSelf(); return START_NOT_STICKY }
+        PrivateDns.enforce(this)
+        connectivity.activeNetwork?.let { scheduleCheck(it, 300) }
         return START_STICKY
     }
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(receiver) }
+        runCatching { contentResolver.unregisterContentObserver(dnsObserver) }
+        runCatching { connectivity.unregisterNetworkCallback(netCallback) }
+        netExec.shutdownNow()
         super.onDestroy()
     }
 }
@@ -247,7 +362,7 @@ class BootReceiver : BroadcastReceiver() {
         Mdm(c).ensureBaseline()
         GuardService.refresh(c)
         // As device owner the system restarts the always-on VPN itself; otherwise start it here.
-        if (Prefs.webBlock(c) && VpnService.prepare(c) == null) {
+        if (DnsVpnService.shouldRun(c) && VpnService.prepare(c) == null) {
             runCatching { c.startService(Intent(c, DnsVpnService::class.java)) }
         }
     }

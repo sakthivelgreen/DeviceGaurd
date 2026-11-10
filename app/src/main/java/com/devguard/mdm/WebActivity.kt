@@ -39,8 +39,24 @@ class WebActivity : BaseActivity() {
         toast("Applying…")
         Thread {
             val msg = try { PrivateDns.apply(this, host) } catch (e: Exception) { e.message ?: "Failed" }
-            runOnUiThread { toast(msg); if (!isFinishing) render() }
+            runOnUiThread {
+                if (msg == PrivateDns.UNAFFILIATED_HELP && host != null)
+                    MaterialAlertDialogBuilder(this).setTitle("Private Space is blocking this").setMessage(msg)
+                        .setPositiveButton("Copy setup command") { _, _ -> Bloat.copy(this, PrivateDns.ADB_GRANT) }
+                        .setNeutralButton("Use VPN filter") { _, _ -> useVpnFamily() }
+                        .setNegativeButton("Close", null).show()
+                else toast(msg)
+                if (!isFinishing) render()
+            }
         }.start()
+    }
+
+    /** Family-safe filtering through the app's own VPN (works with Private Space present). */
+    private fun useVpnFamily() {
+        Prefs.setFamilyDns(this, true)
+        DnsVpnService.reload(this)
+        if (WebFilter.enable(this)) toast("VPN filter on with family-safe DNS")
+        render()
     }
 
     private fun choosePrivateDns() {
@@ -104,12 +120,84 @@ class WebActivity : BaseActivity() {
             // ---- 1. Family-safe (Private DNS) ----
             card("Family-safe filter · no VPN") {
             text("Forces the phone's Private DNS to a filtering service and locks the setting. Works in every app and browser.", 13f).alpha = 0.8f
+            val chosen = Prefs.privateDnsHost(context)
+            val backup = SmartDns.fallbackActive(context)
             text("Current: " + when {
+                backup && chosen != null ->
+                    (PrivateDns.PROVIDERS.firstOrNull { it.host == chosen }?.name ?: chosen) + " (backup mode on this network)"
                 host == null -> "Off"
                 provider != null -> "${provider.name} ($host)"
                 else -> "Custom ($host)"
-            }, 15f, bold = true, color = if (host != null) Palette.GREEN else null)
+            }, 15f, bold = true, color = if (host != null || backup) Palette.GREEN else null)
+
+            val canWrite = PrivateDns.canWrite(context)
+            val locked = Prefs.privateDnsHost(context)
+            when {
+                locked != null && canWrite ->
+                    text("🔒 Locked: if anyone changes Private DNS, it's switched back automatically.", 12f, color = Palette.GREEN)
+                !canWrite -> {
+                    text(
+                        "⚠️ One-time setup needed. vivo Settings ignores Android's Private DNS lock" +
+                            (if (PrivateDns.hasOtherUsers(context)) ", and Private Space blocks the normal method" else "") +
+                            ". Connect the phone to the PC and run this once:",
+                        12f, color = Palette.ORANGE,
+                    )
+                    text(PrivateDns.ADB_GRANT, 12f, bold = true).setTextIsSelectable(true)
+                    button("Copy setup command", outlined = true) { Bloat.copy(this@WebActivity, PrivateDns.ADB_GRANT) }
+                }
+            }
             button("Choose filter") { choosePrivateDns() }.isEnabled = owner
+            }
+
+            // ---- Smart DNS: office-network backup ----
+            if (Prefs.privateDnsHost(context) != null) card("Office network backup") {
+                text(
+                    "Some networks (often office Wi-Fi) block the filter's secure DNS (port 853), so the internet stops working. " +
+                        "DeviceGuard notices within seconds and keeps filtering through a backup over HTTPS, so the internet keeps working. " +
+                        "It switches back automatically on other networks.",
+                    13f,
+                ).alpha = 0.8f
+                switchRow(
+                    "Automatic backup",
+                    if (PrivateDns.canWrite(context)) "Recommended" else "Needs the one-time setup command above",
+                    SmartDns.autoOn(context), owner && PrivateDns.canWrite(context),
+                ) { _, on -> SmartDns.setAuto(this@WebActivity, on); render(); true }
+                text(
+                    if (SmartDns.fallbackActive(context)) "🛡️ Now: backup filter (this network blocks secure DNS)"
+                    else "✅ Now: normal Private DNS filter",
+                    13f, bold = true,
+                    color = if (SmartDns.fallbackActive(context)) Palette.ORANGE else Palette.GREEN,
+                )
+                text("Note: in backup mode the filter covers the main profile only, not Private Space.", 12f).alpha = 0.6f
+
+                section("Office domains (intranet)")
+                text("Names that only your office DNS knows, e.g. corp.local or intranet.company.com. Used in backup mode.", 12f).alpha = 0.7f
+                val od = EditText(context).apply {
+                    hint = "intranet.company.com"
+                    isSingleLine = true
+                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
+                }
+                addView(od)
+                button("Add office domain", outlined = true) {
+                    val d = WebFilter.normalize(od.text.toString())
+                        ?: od.text.toString().trim().lowercase().takeIf { Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)*$").matches(it) }
+                    if (d == null) toast("Enter a domain like corp.local") else {
+                        Prefs.setOfficeDomains(this@WebActivity, Prefs.officeDomains(this@WebActivity) + d)
+                        DnsVpnService.reload(this@WebActivity); render()
+                    }
+                }
+                Prefs.officeDomains(context).sorted().forEach { d ->
+                    text("🏢  $d", 15f).setOnClickListener {
+                        confirm("Remove $d?", "It will be resolved through the family filter again.", "Remove") {
+                            Prefs.setOfficeDomains(this@WebActivity, Prefs.officeDomains(this@WebActivity) - d)
+                            DnsVpnService.reload(this@WebActivity); render()
+                        }
+                    }
+                }
+                val remembered = Prefs.dnsBlockedNets(context).size
+                if (remembered > 0) button("Forget $remembered remembered network(s)", outlined = true) {
+                    SmartDns.forgetNetworks(this@WebActivity); GuardService.refresh(this@WebActivity); render()
+                }
             }
 
             // ---- Blocked-site list ----
@@ -165,8 +253,20 @@ class WebActivity : BaseActivity() {
             chromeSwitch(this, "Force Google SafeSearch", "Explicit results hidden in Google Search", Prefs.CHROME_SAFESEARCH, sub)
             chromeSwitch(this, "YouTube restricted mode", "Moderate restricted mode on youtube.com", Prefs.CHROME_YOUTUBE, sub)
             chromeSwitch(this, "Disable incognito tabs", "Users can't browse privately", Prefs.CHROME_NO_INCOGNITO, sub)
-            button("Hide other browsers", outlined = true) { hideOtherBrowsers() }.isEnabled = owner
-            text("Hide other browsers so Chrome's rules can't be avoided. Turn on Approved apps only so new browsers can't be installed.", 12f).alpha = 0.6f
+            switchRow(
+                "Allow only Chrome",
+                "Hides every other browser now and any browser installed later, so Chrome's rules can't be avoided",
+                Prefs.getFlag(context, Prefs.CHROME_ONLY), owner,
+            ) { _, on ->
+                val n = ChromePolicy.setChromeOnly(this@WebActivity, on)
+                toast(if (on) "Only Chrome allowed ($n other browser(s) hidden)" else "Other browsers allowed again ($n restored)")
+                render(); true
+            }
+            text(
+                "Chrome rules don't reach browsers inside Private Space or the built-in browsers of apps like Instagram. " +
+                    "To block your site list there too, use a custom Private DNS (e.g. NextDNS) in the Family-safe filter above.",
+                12f,
+            ).alpha = 0.65f
 
             }
 

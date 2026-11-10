@@ -58,15 +58,90 @@ class MainActivity : AppCompatActivity() {
                     when {
                         a.length !in 4..12 -> toast("PIN must be 4–12 digits")
                         a != p2!!.text.toString() -> toast("PINs don't match")
-                        else -> { Prefs.setPin(this@MainActivity, a); Session.unlockNow(); render() }
+                        else -> {
+                            Prefs.setPin(this@MainActivity, a); Session.unlockNow()
+                            showRecoveryCode(Prefs.newRecoveryCode(this@MainActivity)) { render() }
+                        }
                     }
                 } else {
                     val err = Session.tryUnlock(this@MainActivity, a)
                     if (err == null) render() else { toast(err); p1.text.clear() }
                 }
             }
+            if (!setup) button("Forgot PIN?", outlined = true) { forgotPin() }
         }
         text("by ${getString(R.string.author)}", 12f).apply { gravity = Gravity.CENTER; alpha = 0.5f }
+    }
+
+    // ------------------------------------------------------- PIN recovery
+
+    /** Shows a newly created recovery code once. It can't be shown again; only a new one can be made. */
+    private fun showRecoveryCode(code: String, then: () -> Unit) {
+        val col = column()
+        col.text("Write this down and keep it somewhere safe (not on this phone). It's the only way to reset a forgotten PIN on the phone itself.", 14f)
+        col.text(code, 26f, bold = true, color = Palette.BLUE).apply {
+            gravity = Gravity.CENTER
+            setTextIsSelectable(true)
+            typeface = android.graphics.Typeface.MONOSPACE
+            setPadding(0, dp(16), 0, dp(16))
+        }
+        col.text("A new code replaces the old one each time the PIN is set.", 12f).alpha = 0.6f
+        MaterialAlertDialogBuilder(this).setTitle("Your recovery code").setView(col).setCancelable(false)
+            .setNeutralButton("Copy") { _, _ -> Bloat.copy(this, code); then() }
+            .setPositiveButton("I've saved it") { _, _ -> then() }
+            .show()
+    }
+
+    private fun forgotPin() {
+        MaterialAlertDialogBuilder(this).setTitle("Forgot PIN?")
+            .setItems(arrayOf("Use my recovery code", "Reset from the PC (ADB)")) { _, i ->
+                if (i == 0) recoverWithCode() else pcResetHelp()
+            }.show()
+    }
+
+    private fun recoverWithCode() {
+        if (!Prefs.hasRecovery(this)) {
+            toast("No recovery code was set up. Use the PC reset instead.")
+            pcResetHelp(); return
+        }
+        val e = EditText(this).apply {
+            hint = "XXXX-XXXX-XXXX-XXXX"
+            isSingleLine = true
+            inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_FLAG_CAP_CHARACTERS
+        }
+        MaterialAlertDialogBuilder(this).setTitle("Enter recovery code").setView(padded(e))
+            .setPositiveButton("Reset PIN") { _, _ ->
+                val err = Session.tryRecovery(this, e.text.toString())
+                if (err == null) {
+                    Prefs.clearPin(this)
+                    toast("Recovery code accepted. Create a new PIN.")
+                    render()
+                } else toast(err)
+            }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun pcResetHelp() {
+        val col = column()
+        col.text("Connect the phone to your PC (USB debugging on) and run:", 14f)
+        col.text(PinResetReceiver.ADB_COMMAND, 12f, bold = true).setTextIsSelectable(true)
+        col.text("Then open DeviceGuard again and create a new PIN. All protections stay on.", 13f).alpha = 0.7f
+        MaterialAlertDialogBuilder(this).setTitle("Reset PIN from the PC").setView(col)
+            .setPositiveButton("OK", null).show()
+    }
+
+    /** PIN & recovery menu (dashboard). */
+    private fun securityMenu() {
+        MaterialAlertDialogBuilder(this).setTitle("PIN & recovery")
+            .setItems(arrayOf("Change admin PIN", "Create a new recovery code", "How to reset from the PC")) { _, i ->
+                when (i) {
+                    0 -> changePin()
+                    1 -> confirm("New recovery code?", "The old recovery code stops working.", "Create") {
+                        showRecoveryCode(Prefs.newRecoveryCode(this)) { render() }
+                    }
+                    2 -> pcResetHelp()
+                }
+            }.show()
     }
 
     // ---------------------------------------------------------- dashboard
@@ -97,6 +172,11 @@ class MainActivity : AppCompatActivity() {
                     "Play Store: $playState",
                 ),
             )
+            if (!Prefs.hasRecovery(context)) card {
+                text("🔑 No recovery code yet", 15f, bold = true, color = Palette.ORANGE)
+                text("If you forget the PIN, a recovery code lets you reset it on the phone. Create one now and keep it safe.", 13f)
+                button("Create recovery code") { showRecoveryCode(Prefs.newRecoveryCode(this@MainActivity)) { render() } }
+            }
             if (!m.isOwner) card {
                 text("Make this app Device Owner from a PC (the phone must have no accounts):", 13f)
                 text("adb shell dpm set-device-owner $packageName/.AdminReceiver", 12f, bold = true).setTextIsSelectable(true)
@@ -140,7 +220,7 @@ class MainActivity : AppCompatActivity() {
                 Tile("Reboot", R.drawable.ic_restart, Palette.INDIGO, enabled = m.isOwner) {
                     confirm("Reboot?", "The phone will restart now.", "Reboot") { act { m.dpm.reboot(m.admin) } }
                 },
-                Tile("Change PIN", R.drawable.ic_key, Palette.INDIGO) { changePin() },
+                Tile("PIN & recovery", R.drawable.ic_key, Palette.INDIGO) { securityMenu() },
             ))
             button("Danger zone", outlined = true) { dangerZone(m) }.apply {
                 setTextColor(Palette.RED)

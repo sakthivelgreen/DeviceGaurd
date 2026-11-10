@@ -28,6 +28,9 @@ val RESTRICTION_GROUPS: List<Pair<String, List<Restriction>>> = listOf(
         Restriction(UserManager.DISALLOW_FACTORY_RESET, "Block factory reset", "Reset from Settings is disabled"),
         Restriction(UserManager.DISALLOW_SAFE_BOOT, "Block safe mode", "Stops booting into safe mode to get around controls"),
         Restriction(UserManager.DISALLOW_ADD_USER, "Block adding users / guest"),
+        Restriction("no_add_private_profile", "Block Private Space", "Private Space breaks the website filter (unaffiliated user)"),
+        Restriction("no_add_clone_profile", "Block App Clone", "App Clone breaks the website filter (unaffiliated user)"),
+        Restriction(UserManager.DISALLOW_ADD_MANAGED_PROFILE, "Block work profile"),
         Restriction(UserManager.DISALLOW_MODIFY_ACCOUNTS, "Block adding or removing accounts", "Sign in to your Google account BEFORE turning this on"),
         Restriction(UserManager.DISALLOW_APPS_CONTROL, "Block app settings changes", "Users can't clear data, force stop or disable apps"),
         Restriction(
@@ -100,7 +103,7 @@ class Mdm(private val c: Context) {
         WebFilter.disable(a)
         Approval.disable(a)
         ChromePolicy.clear(a)
-        runCatching { dpm.setGlobalPrivateDnsModeOpportunistic(admin) }
+        runCatching { PrivateDns.apply(a, null) }
         RESTRICTION_GROUPS.flatMap { it.second }.forEach { r -> runCatching { dpm.clearUserRestriction(admin, r.key) } }
         runCatching { dpm.setCameraDisabled(admin, false) }
         runCatching { dpm.setScreenCaptureDisabled(admin, false) }

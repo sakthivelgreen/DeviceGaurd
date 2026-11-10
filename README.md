@@ -70,8 +70,13 @@ Good for previewing the UI on any phone. Controls stay disabled ("Setup needed")
    & $adb shell dpm list-owners
    # → User 0: admin=com.devguard.mdm/.AdminReceiver,DeviceOwner,Affiliated
    ```
-4. On the phone: open **DeviceGuard MDM** → create the **admin PIN**. The dashboard card turns blue: **"Device protected"**.
-5. Now sign in to Google and other accounts and reinstall your apps, before turning on account/install restrictions.
+4. One-time permission so DeviceGuard can set **and lock** Private DNS itself (needed on vivo, and when Private Space exists):
+   ```powershell
+   & $adb shell pm grant com.devguard.mdm android.permission.WRITE_SECURE_SETTINGS
+   ```
+   It survives app updates (`install -r`), but has to be run again after an uninstall or reset.
+5. On the phone: open **DeviceGuard MDM** → create the **admin PIN**. The dashboard card turns blue: **"Device protected"**.
+6. Now sign in to Google and other accounts and reinstall your apps, before turning on account/install restrictions.
 
 If step 2 fails, see §12 (errors such as *already some accounts* or *several users*).
 
@@ -120,7 +125,9 @@ If uninstall says `DELETE_FAILED_DEVICE_POLICY_MANAGER`, Device Owner is still a
 ### H. Lost access?
 | Situation | Way out |
 |---|---|
-| Forgot PIN, ADB still works | **E** via ADB, then **F** |
+| Forgot PIN, have the **recovery code** | Lock screen → **Forgot PIN? → Use my recovery code** → enter `XXXX-XXXX-XXXX-XXXX` → create a new PIN |
+| Forgot PIN, PC available | `& $adb shell am broadcast -a com.devguard.mdm.RESET_PIN -n com.devguard.mdm/.PinResetReceiver`, then open the app and create a new PIN (all protections stay on) |
+| Forgot PIN, nothing else works but ADB does | **E** via ADB, then **F** |
 | Forgot PIN **and** "Block Developer options & USB debugging" is on | Recovery-mode factory reset (power off → Power + Volume Up → Wipe data). With "Block factory reset" on, only the Android recovery menu works. |
 | Stuck in kiosk | Long-press the kiosk title → PIN → Exit, or **E** via ADB |
 
@@ -290,10 +297,19 @@ Android only lets an app become **Device Owner** when the phone has **no account
 
 Open **DeviceGuard MDM** and enter the PIN. The session locks after 5 minutes of inactivity, or when you tap **Lock panel**.
 
+### Admin PIN & recovery
+- **Recovery code:** after setting the PIN, the app shows a one-time **recovery code** (`XXXX-XXXX-XXXX-XXXX`). Write it down and keep it off the phone. Only its hash is stored. A new code is made every time the PIN is set. If you don't have one yet, the dashboard shows a reminder card.
+- **Forgot PIN?** (button on the lock screen):
+  1. **Use my recovery code** → the PIN is cleared → create a new PIN (and you get a new recovery code).
+  2. **Reset from the PC (ADB):** with USB debugging on, run `adb shell am broadcast -a com.devguard.mdm.RESET_PIN -n com.devguard.mdm/.PinResetReceiver`. Only the ADB shell can send this (the receiver is protected by the `DUMP` permission).
+- Wrong PIN or recovery code 5 times → 30-second lockout.
+- Dashboard → **PIN & recovery**: change PIN, create a new recovery code, PC reset help.
+- Resetting the PIN never turns any protection off.
+
 ### Dashboard
 - **Status card:** blue "Device protected" when Device Owner, orange "Setup needed" otherwise. Pills show web filtering, approval mode, active restriction count and Play Store state.
 - **Manage tiles:** Apps · Websites · Restrictions · Bloatware · Blocked apps · Play Store · Kiosk · About · Lock panel
-- **Quick actions:** Lock now · Reboot · Change PIN
+- **Quick actions:** Lock now · Reboot · PIN & recovery
 - **Danger zone** (red button): Remove Device Owner (releases everything) · Factory reset (type `WIPE`)
 
 ### Apps
@@ -328,10 +344,40 @@ For an extra layer, use the Play Store's own **parental controls** (Play Store �
 
    The Private DNS setting is then locked.
 2. **Your blocked sites:** add domains (subdomains included) or quick-add tiles (Social media, Video, Games). The list feeds Chrome rules and the VPN filter.
-3. **Chrome rules, no VPN:** **Enforce in Chrome** plus options (adult filter, SafeSearch, YouTube restricted, no incognito). Then **Hide other browsers**. Restart Chrome and check `chrome://policy`.
+3. **Chrome rules, no VPN:** **Enforce in Chrome** plus options (adult filter, SafeSearch, YouTube restricted, no incognito). Restart Chrome and check `chrome://policy`.
+   - **Allow only Chrome** (switch): hides every other browser now and **any browser installed later** (with a "… is not allowed" notification). Turning it off restores them. Chrome rules only work in Chrome, so other browsers must be blocked.
+   - Chrome rules **can't reach** browsers inside **Private Space** or the built-in browsers of apps (Instagram, Google app…). To block *your own* site list there too, use a **custom Private DNS** such as NextDNS (free tier) in the Family-safe filter. Add your sites in the NextDNS dashboard and enter its DNS-over-TLS hostname (e.g. `abc123.dns.nextdns.io`) under Choose filter → Custom.
 4. **VPN filter (optional):** blocks your list in every app. It can't run together with the Private DNS filter, and the app switches between them for you.
 
 **Recommended:** Cloudflare Family + Chrome rules + hide other browsers + Approved apps only.
+
+**Office network backup (Smart DNS).** Some networks, often office Wi-Fi, block the filter's secure DNS port **853**. With a strict Private DNS filter the internet then stops working. DeviceGuard fixes this automatically (Websites → **Office network backup**, on by default):
+
+| Situation | What happens | Internet gap |
+|---|---|---|
+| Port 853 works (home, mobile data) | Normal Private DNS filter (whole phone, incl. Private Space) | none |
+| New network blocks 853 | Detected on connect (TLS test to the filter, 2–4 s) → **backup filter**: the app's VPN sends lookups to the **same filter over HTTPS (DoH, port 443)**, Private DNS set to automatic | ~2–4 s, once |
+| Same network again | Remembered → backup starts instantly, then re-checked in the background | ~0–2 s |
+| Back on a normal network | Private DNS filter restored, VPN stopped | none |
+
+- A notification "Backup web filter on" shows while backup mode is active.
+- **Office domains (intranet):** add names like `corp.local` or `intranet.company.com`. In backup mode they're resolved by the office DNS (split DNS), everything else by the family filter.
+- Your **blocked-site list also applies** in backup mode.
+- The lock stays on: in backup mode Private DNS is held at "automatic" (so it can't bypass the VPN), and changes are reverted.
+- **Limit:** in backup mode the filter covers the **main profile only, not Private Space** (Android VPNs are per user).
+- Wi-Fi login pages (captive portals) are left alone until you've logged in.
+- **Forget remembered networks** button: clears the list of networks known to block 853.
+- Needs the one-time `WRITE_SECURE_SETTINGS` grant (§0 B step 4).
+
+**Private DNS lock on vivo / with Private Space.** vivo's Settings app ignores Android's "Lock Private DNS" restriction, and Private Space blocks the normal Device Owner method. After the one-time grant (§0 B step 4), DeviceGuard writes Private DNS itself and **reverts any change instantly**, with a "Private DNS is locked" notification. The Websites screen shows 🔒 Locked. Without the grant you can still set it from the PC, which applies to the whole phone, including Private Space:
+```powershell
+$adb = "D:\TV_CLEANUP\platform-tools\adb.exe"
+& $adb shell settings put global private_dns_mode hostname
+& $adb shell settings put global private_dns_specifier family.cloudflare-dns.com   # or family.adguard-dns.com / your NextDNS host
+& $adb shell settings get global private_dns_specifier                              # check
+```
+Then in the app turn on **Restrictions → Lock Private DNS**, so the user can't change it. The Websites screen shows it as "Current: Cloudflare Family". To turn it off: `& $adb shell settings put global private_dns_mode opportunistic`.
+Alternative inside the app: **VPN filter + Family-safe upstream** (covers the main profile, not Private Space).
 
 ### Restrictions
 Switches grouped in cards. Recommended baseline: Block factory reset, Block safe mode, Block adding users, Block app settings changes, Lock VPN settings, Lock Private DNS.
@@ -411,10 +457,11 @@ MDM_App/
             ├── KioskActivity.kt         Kiosk home screen (lock task)
             ├── AboutActivity.kt         App info and author
             ├── Mdm.kt                   AdminReceiver, RESTRICTION_GROUPS, Mdm (DevicePolicyManager wrapper), releaseAll()
-            ├── Features.kt              WebFilter, PrivateDns, ChromePolicy, Kiosk, Blocklist, Approval
+            ├── Features.kt              WebFilter, PrivateDns, SmartDns, ChromePolicy, Kiosk, Blocklist, Approval
             ├── Bloat.kt                 BloatCat, bloat.csv loader, app state, ADB command builders
             ├── Services.kt              DnsVpnService (DNS filter), GuardService (install watcher), BootReceiver
-            ├── Prefs.kt                 SharedPreferences store, PIN hashing, Session (timeout/lockout)
+            ├── Prefs.kt                 SharedPreferences store, PIN + recovery-code hashing, Session (timeout/lockout)
+            ├── PinResetReceiver.kt      ADB-only forgotten-PIN reset (protected by DUMP permission)
             └── Ui.kt                    UI kit: pages, cards, tiles, tabs, switches, dialogs, palette
 ```
 
@@ -449,6 +496,8 @@ MDM_App/
 | Any DPM call | `Mdm.kt` → `class Mdm` (`setHidden`, `setSuspended`, `setRestriction`, `isOwner`…) |
 | Restriction switches | `Mdm.kt` → `RESTRICTION_GROUPS` |
 | Undo everything | `Mdm.kt` → `releaseAll()` |
+| Office-network backup | `Features.kt` → `SmartDns` (`check`, `enterFallback`, `exitFallback`, `bootstrap`, `dohUrl`); network watcher in `GuardService` (`registerDefaultNetworkCallback`); DoH and split DNS in `DnsVpnService` (`doh`, `forwardLocal`) |
+| PIN recovery | `Prefs.kt` → `newRecoveryCode/checkRecovery/clearPin`, `Session.tryRecovery`; `MainActivity` → `forgotPin`, `showRecoveryCode`, `securityMenu`; `PinResetReceiver.kt` (ADB reset) |
 | Private DNS filter | `Features.kt` → `PrivateDns` (`PROVIDERS`, `apply()`; this does a network check, so run it off the main thread) |
 | Chrome policies | `Features.kt` → `ChromePolicy.apply()` (Bundle keys = Chrome enterprise policy names) |
 | VPN DNS filter | `Services.kt` → `DnsVpnService` (parses IPv4/UDP DNS, NXDOMAIN for blocked names, forwards the rest to 1.1.1.1/8.8.8.8 or 1.1.1.3) |
@@ -554,6 +603,11 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | **Private DNS vs VPN filter** | A forced Private DNS host sends DNS-over-TLS straight to that host, bypassing the VPN, so the app keeps them mutually exclusive. |
 | **`setGlobalPrivateDnsModeSpecifiedHost` blocks** | It tests the host over the network, so it's called on a background thread. |
 | **Implicit broadcasts** | `PACKAGE_ADDED` can't be received by a manifest receiver, so `GuardService` (foreground, `specialUse`) registers it at runtime. |
+| **"Unaffiliated users" error (Private DNS filter)** | Phone-wide policies such as Private DNS need **every user to be affiliated** with the Device Owner. Private Space can never be affiliated (Android doesn't allow an admin inside it), so the app can't set Private DNS while it exists. **Workarounds that keep Private Space:** (1) set Private DNS **from the PC** (see *Websites → Private Space on the phone* in §7), whole phone; (2) VPN filter + Family-safe upstream, main profile only; (3) Chrome rules. Check users with `adb shell pm list users`. |
+| **vivo ignores "Lock Private DNS"** | The restriction is applied (`dumpsys device_policy` shows `disallow_config_private_dns = true`), but vivo's custom Private DNS screen doesn't check it. Fix: `WRITE_SECURE_SETTINGS` granted over ADB. `GuardService` watches `private_dns_mode`/`private_dns_specifier` with a `ContentObserver` and restores the chosen host (`PrivateDns.enforce`). |
+| **"Lock Private DNS" also blocks DeviceGuard** | While `DISALLOW_CONFIG_PRIVATE_DNS` is on, Android's SettingsProvider **silently ignores** writes to `private_dns_*` from every app and from `adb shell settings put` (only the system Settings app is exempt, which is how vivo Settings can switch it off). `PrivateDns.write()` lifts the restriction for a moment, writes, reads it back to check, and re-applies it. To change Private DNS from the PC, first turn the lock off in the app. |
+| **Networks that block port 853** | Strict Private DNS has no fallback, so the internet dies. `SmartDns` tests 853 with bootstrap IPs (no DNS needed), then switches to the VPN filter with a DoH upstream. DeviceGuard is excluded from its own VPN (`addDisallowedApplication`) so its DoH requests and network tests go straight out. |
+| **Chrome rules only work in Chrome** | Other browsers ignore Chrome policies, so **Allow only Chrome** hides other browsers (`ChromePolicy.setChromeOnly`) and `GuardService` hides newly installed ones (`ChromePolicy.isBrowser` = handles any `http` link). |
 | **Duplicate ADB device entries** | Wireless debugging can list the phone twice; use `adb -s <serial>`. |
 | **vivo account / App Clone / Private Space** | These count as accounts/users and block `set-device-owner`. Skip them in setup. |
 | **vivo "Install via USB"** | Needed for `adb install` on vivo. |
@@ -578,6 +632,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | `INSTALL_FAILED_TEST_ONLY` | Use `adb install -t`. |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Different signing key. Build with the same `debug.keystore` (§10.9). |
 | Install blocked | Turn off **Block all installs** in the app. |
+| Choose filter → "unaffiliated users" | Private Space / App Clone exists. Keep it and set Private DNS from the PC (§7 Websites), or use the VPN filter. |
 | Blocked site still opens | Close and reopen the browser (DNS cache). Check Websites → filter "Current". |
 | Chrome rules not applied | Force-stop Chrome and check `chrome://policy`. |
 | Gradle can't find SDK | Fix `sdk.dir` in `local.properties`. |
@@ -607,5 +662,9 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-09 | Keep scroll position on re-render; Apps list updates only the changed row. |
 | 2026-11-09 | Blocked apps (auto-uninstall on install); Play Store Suspend explains the verifier limit and offers Hide; dashboard regrouped. |
 | 2026-11-09 | Fixed title overlapping the status bar when returning to a screen (insets re-applied). README rewritten with requirements and developer guide. |
+| 2026-11-10 | Private DNS: clear message for the "unaffiliated users" error (caused by Private Space); new restrictions Block Private Space, Block App Clone, Block work profile. Workaround keeping Private Space: Private DNS set over ADB (app now detects and shows it), or VPN filter + family-safe upstream. |
+| 2026-11-10 | Private DNS lock that really works on vivo: one-time `WRITE_SECURE_SETTINGS` grant; the app writes Private DNS itself (works with Private Space) and auto-reverts edits. New **Allow only Chrome** switch: hides other browsers now and on install. |
+| 2026-11-10 | Fix: auto-revert couldn't write while the lock restriction was on (writes were silently dropped). The app now lifts the lock, writes, checks and re-locks. Checked on the phone: Private DNS `family.adguard-dns.com`, validated, lock re-applied. |
+| 2026-11-10 | **Office network backup (Smart DNS):** network watcher, port-853 test on connect, remembered blocking networks, backup VPN filter over DoH, office domains (split DNS), status card. **PIN recovery:** one-time recovery code, "Forgot PIN?" on the lock screen, ADB reset receiver, dashboard reminder, PIN & recovery tile. |
 
 © Sakthivel J

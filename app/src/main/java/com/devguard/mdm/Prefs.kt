@@ -25,6 +25,32 @@ object Prefs {
         return MessageDigest.isEqual(hash(salt, pin).toByteArray(), stored.toByteArray())
     }
 
+    // ---- Recovery code (backup for a forgotten PIN) ----
+    fun hasRecovery(c: Context) = p(c).contains("recHash")
+
+    /** Creates a new random recovery code (e.g. K7QM-3PXD-W9TA-6HZN), stores only its hash, returns it to show once. */
+    fun newRecoveryCode(c: Context): String {
+        val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+        val rnd = SecureRandom()
+        val raw = (1..16).map { alphabet[rnd.nextInt(alphabet.length)] }.joinToString("")
+        val code = raw.chunked(4).joinToString("-")
+        val salt = ByteArray(16).also { rnd.nextBytes(it) }
+        val s = Base64.encodeToString(salt, Base64.NO_WRAP)
+        p(c).edit().putString("recSalt", s).putString("recHash", hash(s, normalizeCode(code))).commit()
+        return code
+    }
+
+    fun checkRecovery(c: Context, code: String): Boolean {
+        val salt = p(c).getString("recSalt", null) ?: return false
+        val stored = p(c).getString("recHash", "") ?: ""
+        return MessageDigest.isEqual(hash(salt, normalizeCode(code)).toByteArray(), stored.toByteArray())
+    }
+
+    private fun normalizeCode(code: String) = code.uppercase().filter { it.isLetterOrDigit() }
+
+    /** Removes the PIN; the app then asks to create a new one (used by recovery code and PC reset). */
+    fun clearPin(c: Context) = p(c).edit().remove("pinHash").remove("pinSalt").commit()
+
     private fun hash(salt: String, pin: String): String {
         val md = MessageDigest.getInstance("SHA-256")
         var d = (salt + pin).toByteArray()
@@ -43,6 +69,17 @@ object Prefs {
     fun setDomains(c: Context, v: Set<String>) = putSet(c, "domains", v)
     fun webBlock(c: Context) = flag(c, "webBlock")
     fun setWebBlock(c: Context, v: Boolean) = putFlag(c, "webBlock", v)
+    // ---- Smart DNS (office-network backup) ----
+    const val SMART_DNS_OFF = "smartDnsOff"      // default ON (flag is "off")
+    const val DNS_FALLBACK = "dnsFallback"       // true while the backup VPN filter is in use
+    fun officeDomains(c: Context) = set(c, "officeDomains")
+    fun setOfficeDomains(c: Context, v: Set<String>) = putSet(c, "officeDomains", v)
+    fun dnsBlockedNets(c: Context) = set(c, "dnsBlockedNets")
+    fun setDnsBlockedNets(c: Context, v: Set<String>) = putSet(c, "dnsBlockedNets", v)
+
+    /** Private DNS host chosen in the app (enforced/auto-reverted by GuardService), or null. */
+    fun privateDnsHost(c: Context): String? = p(c).getString("privateDnsHost", null)
+    fun setPrivateDnsHost(c: Context, v: String?) = p(c).edit().putString("privateDnsHost", v).commit()
     fun familyDns(c: Context) = flag(c, "familyDns")
     fun setFamilyDns(c: Context, v: Boolean) = putFlag(c, "familyDns", v)
 
@@ -52,6 +89,9 @@ object Prefs {
     const val CHROME_SAFESEARCH = "chromeSafeSearch"
     const val CHROME_YOUTUBE = "chromeYoutube"
     const val CHROME_NO_INCOGNITO = "chromeNoIncognito"
+    const val CHROME_ONLY = "chromeOnly"
+    fun hiddenBrowsers(c: Context) = set(c, "hiddenBrowsers")
+    fun setHiddenBrowsers(c: Context, v: Set<String>) = putSet(c, "hiddenBrowsers", v)
     fun getFlag(c: Context, k: String) = flag(c, k)
     fun setFlag(c: Context, k: String, v: Boolean) = putFlag(c, k, v)
 
@@ -102,4 +142,17 @@ object Session {
     }
 
     fun unlockNow() { last = System.currentTimeMillis() }
+
+    /** Recovery code check with the same lockout as the PIN. Returns null on success, or an error message. */
+    fun tryRecovery(c: Context, code: String): String? {
+        val now = System.currentTimeMillis()
+        if (now < lockedUntil) return "Too many attempts. Wait ${(lockedUntil - now) / 1000 + 1}s."
+        return if (Prefs.checkRecovery(c, code)) {
+            fails = 0; null
+        } else {
+            fails++
+            if (fails >= MAX_FAILS) { fails = 0; lockedUntil = now + LOCKOUT_MS }
+            "Wrong recovery code"
+        }
+    }
 }
