@@ -22,7 +22,7 @@ param(
     [string[]] $Package,
     [switch] $FromLog,
     [switch] $Yes,
-    [string] $Adb = "$PSScriptRoot\..\..\platform-tools\adb.exe"
+    [string] $Adb = "$PSScriptRoot\..\platform-tools\adb.exe"   # ADB bundled in MDM_App\platform-tools
 )
 
 $ErrorActionPreference = 'Stop'

@@ -12,7 +12,7 @@ DeviceGuard MDM is a single-phone Mobile Device Management app. It runs as Andro
 
 ## Contents
 
-0. [Quick reference: install, Device Owner, update, uninstall](#0-quick-reference-install-device-owner-update-uninstall)
+0. [Quick reference: install, Device Owner, update, uninstall](#0-quick-reference-install-device-owner-update-uninstall) (incl. **I. Reset a forgotten admin PIN**)
 1. [Features](#1-features)
 2. [Requirements](#2-requirements)
 3. [Set up the build environment (from scratch)](#3-set-up-the-build-environment-from-scratch)
@@ -32,11 +32,12 @@ DeviceGuard MDM is a single-phone Mobile Device Management app. It runs as Andro
 
 ## 0. Quick reference: install, Device Owner, update, uninstall
 
-All commands are run in **PowerShell on the PC**. First set the shortcuts:
+All commands are run in **PowerShell on the PC**, **from the project root `D:\TV_CLEANUP\MDM_App`**. ADB is included in the project (`MDM_App\platform-tools`), so all paths are relative and the whole folder can be copied to another PC or drive. First go to the root and set the shortcuts:
 
 ```powershell
-$adb = "D:\TV_CLEANUP\platform-tools\adb.exe"
-$apk = "D:\TV_CLEANUP\MDM_App\app\build\outputs\apk\debug\app-debug.apk"
+cd D:\TV_CLEANUP\MDM_App           # project root (change if you moved the folder)
+$adb = ".\platform-tools\adb.exe"
+$apk = ".\app\build\outputs\apk\debug\app-debug.apk"
 & $adb devices        # phone must show as "device". If it's listed twice, add  -s <serial>  after & $adb
 ```
 
@@ -128,7 +129,37 @@ If uninstall says `DELETE_FAILED_DEVICE_POLICY_MANAGER`, Device Owner is still a
 | Forgot PIN, have the **recovery code** | Lock screen → **Forgot PIN? → Use my recovery code** → enter `XXXX-XXXX-XXXX-XXXX` → create a new PIN |
 | Forgot PIN, PC available | `& $adb shell am broadcast -a com.devguard.mdm.RESET_PIN -n com.devguard.mdm/.PinResetReceiver`, then open the app and create a new PIN (all protections stay on) |
 | Forgot PIN, nothing else works but ADB does | **E** via ADB, then **F** |
-| Forgot PIN **and** "Block Developer options & USB debugging" is on | Recovery-mode factory reset (power off → Power + Volume Up → Wipe data). With "Block factory reset" on, only the Android recovery menu works. |
+| Forgot PIN **and** "Block Developer options & USB debugging" is on | Use the **recovery code**. If that's lost too: recovery-mode factory reset (power off → Power + Volume Up → Wipe data). With "Block factory reset" on, only the Android recovery menu works. |
+
+### I. Reset a forgotten admin PIN
+
+There are two ways. Both **only remove the PIN**: every protection, Device Owner and all data stay as they are.
+
+**Option 1: Recovery code (on the phone, no PC)**
+1. Open DeviceGuard → lock screen → **Forgot PIN?**
+2. Tap **Use my recovery code**.
+3. Enter the code you saved (`XXXX-XXXX-XXXX-XXXX`; dashes and capitals don't matter) → **Reset PIN**.
+4. The app shows **Create admin PIN**. Set a new PIN.
+5. A **new recovery code** is shown. Save it, because the old one no longer works.
+
+**Option 2: ADB reset (from the PC)**
+Needs: USB debugging on, phone connected, and this PC already allowed ("Allow USB debugging?").
+```powershell
+$adb = ".\platform-tools\adb.exe"
+& $adb devices                     # phone must show as "device"
+& $adb shell am broadcast -a com.devguard.mdm.RESET_PIN -n com.devguard.mdm/.PinResetReceiver
+```
+Expected output ends with: `result=0, data="DeviceGuard PIN cleared. Open the app on the phone to create a new PIN."`
+Then open DeviceGuard on the phone → **Create admin PIN** → set a new PIN → save the new recovery code.
+
+| | Recovery code | ADB reset |
+|---|---|---|
+| Needs | The saved code | PC + cable + USB debugging |
+| Works if "Block Developer options & USB debugging" is on | ✅ | ❌ |
+| Works if the code is lost | ❌ | ✅ |
+| Removes protections or data | No | No |
+
+Security: the ADB reset only accepts the ADB shell (the receiver requires the `DUMP` permission), so other apps can't trigger it. Wrong PIN or recovery code 5 times → 30-second lockout.
 | Stuck in kiosk | Long-press the kiosk title → PIN → Exit, or **E** via ADB |
 
 ---
@@ -178,7 +209,7 @@ If uninstall says `DELETE_FAILED_DEVICE_POLICY_MANAGER`, Device Owner is still a
 |---|---|
 | Phone | Android 10+ (tested on Android 16) |
 | Device Owner | Phone must have **no accounts and no extra users** when provisioning, so a factory reset is usually needed (§6) |
-| PC tools | ADB (`D:\TV_CLEANUP\platform-tools\adb.exe`, v37) |
+| PC tools | ADB, included in the project: `platform-tools\adb.exe` (v37) |
 | Phone settings | Developer options → USB debugging (and Wireless debugging for Wi-Fi ADB) |
 
 ---
@@ -204,7 +235,7 @@ $sdk = "D:\TV_CLEANUP\android-sdk"
 # 4. Point the project at the SDK (already present in local.properties)
 #    sdk.dir=D\:\\TV_CLEANUP\\android-sdk
 
-# 5. ADB: download "SDK Platform-Tools for Windows" and unzip to D:\TV_CLEANUP\platform-tools
+# 5. ADB is already included in MDM_App\platform-tools. To update it: download "SDK Platform-Tools for Windows" and unzip it over MDM_App\platform-tools
 ```
 
 > `local.properties` is machine-specific. On another PC, change `sdk.dir` to that PC's SDK path.
@@ -222,7 +253,7 @@ Output: `app\build\outputs\apk\debug\app-debug.apk` (about 12 MB)
 
 **Install or update on the phone.** Device Owner and all settings are kept on update:
 ```powershell
-$adb = "D:\TV_CLEANUP\platform-tools\adb.exe"
+$adb = ".\platform-tools\adb.exe"
 & $adb devices                                   # if the phone is listed twice, add -s <serial> to each command
 & $adb install -t -r app\build\outputs\apk\debug\app-debug.apk
 & $adb shell am start -n com.devguard.mdm/.MainActivity
@@ -252,12 +283,12 @@ Current phone IP: **`<phone-ip>`** (it changed after the reset; check Settings �
 1. Phone: Settings → Developer options → **Wireless debugging → ON**.
 2. Tap **Pair device with pairing code**. Keep the dialog open and immediately run:
    ```powershell
-   D:\TV_CLEANUP\platform-tools\adb.exe pair <IP>:<PAIRING_PORT> <6-DIGIT-CODE>
+   .\platform-tools\adb.exe pair <IP>:<PAIRING_PORT> <6-DIGIT-CODE>
    ```
    The code expires as soon as the dialog closes. Pairing is needed once per PC.
 3. Connect with the port shown on the main Wireless debugging screen (it changes every time wireless debugging is toggled):
    ```powershell
-   D:\TV_CLEANUP\platform-tools\adb.exe connect <IP>:<PORT>
+   .\platform-tools\adb.exe connect <IP>:<PORT>
    ```
    `adb mdns services` lists the current pairing and connect ports.
 
@@ -277,14 +308,14 @@ Android only lets an app become **Device Owner** when the phone has **no account
 4. Turn on **USB debugging**, **Wireless debugging** and **Install via USB** (vivo).
 5. Connect ADB (§5), then check the phone is clean:
    ```powershell
-   $adb = "D:\TV_CLEANUP\platform-tools\adb.exe"
+   $adb = ".\platform-tools\adb.exe"
    & $adb shell pm list users                                  # only user 0
    & $adb shell dumpsys account | Select-String "Accounts:"    # 0
    & $adb shell dpm list-owners                                # no owners
    ```
 6. Install and provision:
    ```powershell
-   & $adb install -t D:\TV_CLEANUP\MDM_App\app\build\outputs\apk\debug\app-debug.apk
+   & $adb install -t .\app\build\outputs\apk\debug\app-debug.apk
    & $adb shell dpm set-device-owner com.devguard.mdm/.AdminReceiver
    & $adb shell dpm list-owners      # → admin=com.devguard.mdm/.AdminReceiver,DeviceOwner,Affiliated
    ```
@@ -371,7 +402,7 @@ For an extra layer, use the Play Store's own **parental controls** (Play Store �
 
 **Private DNS lock on vivo / with Private Space.** vivo's Settings app ignores Android's "Lock Private DNS" restriction, and Private Space blocks the normal Device Owner method. After the one-time grant (§0 B step 4), DeviceGuard writes Private DNS itself and **reverts any change instantly**, with a "Private DNS is locked" notification. The Websites screen shows 🔒 Locked. Without the grant you can still set it from the PC, which applies to the whole phone, including Private Space:
 ```powershell
-$adb = "D:\TV_CLEANUP\platform-tools\adb.exe"
+$adb = ".\platform-tools\adb.exe"
 & $adb shell settings put global private_dns_mode hostname
 & $adb shell settings put global private_dns_specifier family.cloudflare-dns.com   # or family.adguard-dns.com / your NextDNS host
 & $adb shell settings get global private_dns_specifier                              # check
@@ -389,7 +420,7 @@ Switches grouped in cards. Recommended baseline: Block factory reset, Block safe
 - **Tap the app's name** for details: Disable/Enable/Restore, plus copyable ADB commands for *remove completely* (`pm uninstall -k --user 0`), disable, enable and restore.
 - Apps that vivo ships disabled (Meet, YouTube, i Music) show a greyed-out switch. Use the ADB enable command for those.
 
-**PC script** (works even without Device Owner), run from `D:\TV_CLEANUP\MDM_App\tools`:
+**PC script** (works even without Device Owner), run from `MDM_App\tools` (it uses `MDM_App\platform-tools\adb.exe` automatically):
 ```powershell
 .\debloat.ps1 -Action list [-Category SAFE|CAUTION|KEEP]
 .\debloat.ps1 -Action disable -Category SAFE          # asks you to type YES
@@ -411,7 +442,8 @@ Bulk actions are allowed only for SAFE or CAUTION. Every change is logged in `to
 | Problem | Fix |
 |---|---|
 | Remove the MDM completely | App → **Danger zone → Remove Device Owner**, then uninstall normally. |
-| Forgot the PIN / app stuck (ADB still on) | `adb shell dpm remove-active-admin com.devguard.mdm/.AdminReceiver` (works only because the app is `testOnly`), then `adb uninstall com.devguard.mdm`. |
+| Forgot the PIN | **Recovery code** (lock screen → Forgot PIN?) or **ADB reset** `adb shell am broadcast -a com.devguard.mdm.RESET_PIN -n com.devguard.mdm/.PinResetReceiver`. Both keep every protection. Step by step in §0 I. |
+| App stuck / must remove it (ADB still on) | `adb shell dpm remove-active-admin com.devguard.mdm/.AdminReceiver` (works only because the app is `testOnly`), then `adb uninstall com.devguard.mdm`. |
 | Stuck in kiosk | Long-press the title + PIN, or the ADB command above. |
 | A bloatware app is needed again | Bloatware → switch ON / Restore, or `adb shell cmd package install-existing <pkg>` |
 | Blocked app needed | Blocked apps → tap → Allow |
@@ -433,6 +465,7 @@ MDM_App/
 ├── gradle.properties          ← JVM args, AndroidX flags
 ├── local.properties           ← sdk.dir (machine-specific)
 ├── gradlew(.bat), gradle/     ← Gradle wrapper 8.14.3
+├── platform-tools/            ← ADB (adb.exe v37 + DLLs), bundled so every command uses .\platform-tools\adb.exe
 ├── tools/
 │   ├── debloat.ps1            ← PC bloatware tool (reads app/src/main/assets/bloat.csv)
 │   └── debloat-log.csv        ← created by the script (undo log)
