@@ -69,6 +69,51 @@ object Prefs {
     fun setDomains(c: Context, v: Set<String>) = putSet(c, "domains", v)
     fun webBlock(c: Context) = flag(c, "webBlock")
     fun setWebBlock(c: Context, v: Boolean) = putFlag(c, "webBlock", v)
+    // ---- Generic string / JSON helpers ----
+    fun getStr(c: Context, k: String): String? = p(c).getString(k, null)
+    fun setStr(c: Context, k: String, v: String?) = p(c).edit().putString(k, v).commit()
+
+    /** All stored values (for profile export). */
+    fun all(c: Context): Map<String, *> = p(c).all
+
+    /** Writes one exported value back (for profile import). */
+    @Suppress("UNCHECKED_CAST")
+    fun putAny(c: Context, k: String, v: Any?) {
+        val e = p(c).edit()
+        when (v) {
+            null -> e.remove(k)
+            is Boolean -> e.putBoolean(k, v)
+            is Int -> e.putInt(k, v)
+            is Long -> e.putLong(k, v)
+            is String -> e.putString(k, v)
+            is Set<*> -> e.putStringSet(k, v as Set<String>)
+        }
+        e.commit()
+    }
+
+    // ---- Screen time ----
+    const val ST_LIMITS = "stLimits"         // JSON {pkg: minutes}
+    const val ST_SCHEDULES = "stSchedules"   // JSON [schedule]
+    const val ST_TEMP_ALLOW = "stTempAllow"  // JSON {pkg: untilMillis}
+    fun stSuspended(c: Context) = set(c, "stSuspended")
+    fun setStSuspended(c: Context, v: Set<String>) = putSet(c, "stSuspended", v)
+    fun stSites(c: Context) = set(c, "stSites")
+    fun setStSites(c: Context, v: Set<String>) = putSet(c, "stSites", v)
+
+    // ---- Two-factor (TOTP) ----
+    const val TOTP_SECRET = "totpSecret"
+
+    // ---- Wi-Fi allowlist / updates / NextDNS ----
+    fun wifiAllow(c: Context) = set(c, "wifiAllow")
+    fun setWifiAllow(c: Context, v: Set<String>) = putSet(c, "wifiAllow", v)
+    const val WIFI_ALLOW_ON = "wifiAllowOn"
+    const val UPD_REPO = "updRepo"
+    const val UPD_TOKEN = "updToken"
+    const val UPD_AUTO = "updAuto"
+    const val UPD_LAST = "updLast"
+    const val NEXTDNS_KEY = "nextdnsKey"
+    const val NEXTDNS_ID = "nextdnsId"
+
     // ---- Background apps ----
     const val BG_SCREEN_OFF_OFF = "bgScreenOffOff" // default ON (flag is "off")
     const val BG_LAST_RUN = "bgLastRun"

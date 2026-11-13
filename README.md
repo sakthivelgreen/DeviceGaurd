@@ -1,7 +1,7 @@
 # DeviceGuard MDM
 
 **Author:** Sakthivel J
-**Package:** `com.devguard.mdm` · **Version:** 1.0 (versionCode 1) · **Min Android:** 10 (API 29) · **Target/Compile:** Android 16 (API 36)
+**Package:** `com.devguard.mdm` · **Version:** 2.0 (versionCode 2) · **Min Android:** 10 (API 29) · **Target/Compile:** Android 16 (API 36)
 **Language:** Kotlin · **UI:** Android Views built in code (no XML layouts) with Material 3 components
 
 DeviceGuard MDM is a single-phone Mobile Device Management app. It runs as Android **Device Owner**, which lets it control the Play Store, block or remove apps, filter websites, lock down device settings, clean up bloatware and run the phone in kiosk mode. You manage everything on the phone, behind an admin PIN; no server is needed.
@@ -76,6 +76,7 @@ Good for previewing the UI on any phone. Controls stay disabled ("Setup needed")
    & $adb shell pm grant com.devguard.mdm android.permission.WRITE_SECURE_SETTINGS
    ```
    It survives app updates (`install -r`), but has to be run again after an uninstall or reset.
+   For **Screen time** (limits and usage): `& $adb shell appops set com.devguard.mdm GET_USAGE_STATS allow` (or Settings → Usage access → DeviceGuard).
    Optional, so Background apps can show Android's Restricted state: `& $adb shell pm grant com.devguard.mdm android.permission.GET_APP_OPS_STATS`
 5. On the phone: open **DeviceGuard MDM** → create the **admin PIN**. The dashboard card turns blue: **"Device protected"**.
 6. Now sign in to Google and other accounts and reinstall your apps, before turning on account/install restrictions.
@@ -178,6 +179,15 @@ Security: the ADB reset only accepts the ADB shell (the receiver requires the `D
 | **Device restrictions** | Camera, screenshots, factory reset, safe mode, add users, accounts, app settings, developer options/ADB, installs/uninstalls, sideloading, Wi-Fi, mobile network, hotspot, Bluetooth, VPN, Private DNS, USB file transfer, SD card, date/time, location, calls, SMS. |
 | **Bloatware** | Every built-in app rated **Safe / Caution / Keep / Unknown** in 2×2 tabs. **Per-app on/off switch**, restore, and copyable ADB "remove completely" command. PC script `tools\debloat.ps1` for bulk list/disable/remove/restore with an undo log. |
 | **Background apps** | **Force stop** any app (Apps → app → Actions…, or Background apps → tap). **No background running** per app: listed apps are force-stopped ~10 s after the screen turns off. Optional Android **Restricted** mode over ADB (`toolsackground.ps1`). |
+| **Screen time** | **Daily app limits** (app paused until midnight), **schedules** (block apps and websites at set times, e.g. study or bedtime), **temporary unlock** (+15/30/60 min), **usage dashboard** (today + last 7 days). Needs one-time Usage access. |
+| **Two-factor unlock** | PIN + 6-digit code from Zoho OneAuth or Google Authenticator (TOTP, offline). |
+| **App permissions** | Per app and per permission group: let the user decide / always allow / always deny (location, camera, microphone, contacts, SMS…). |
+| **Wi-Fi allowlist** | Only the listed Wi-Fi networks can be joined (Android 13+). |
+| **System updates** | Phone default / install automatically / install at night / postpone 30 days. |
+| **Profile backup** | Export every setting to a JSON file and import it again, e.g. after a reset. Secrets aren't exported. |
+| **QR provisioning** | Set up another phone as Device Owner by scanning a QR code during setup, with no PC. |
+| **NextDNS categories** | Use your NextDNS profile as the filter and switch categories (adult, gambling, dating, piracy, social, gaming, video) plus SafeSearch, YouTube restricted and block-bypass from the app. |
+| **App updates** | Silent auto-update from GitHub Releases (`build-<versionCode>` tags). `tools\release.ps1` builds and publishes. |
 | **Kiosk mode** | Lock the phone to chosen apps (lock task mode plus a forced home screen showing app tiles). |
 | **Device actions** | Lock now, reboot, change PIN, release Device Owner, factory reset. |
 | **Self-protection** | The MDM can't be uninstalled while it is Device Owner. Admin PIN (salted, 10,000× SHA-256), 5-minute session, 30-second lockout after 5 wrong tries. |
@@ -205,6 +215,7 @@ Security: the ADB reset only accepts the ADB shell (the receiver requires the `D
 | `androidx.appcompat:appcompat` | 1.7.0 | Base activity |
 | `com.google.android.material:material` | 1.12.0 | Cards, switches, buttons, dialogs |
 | `androidx.recyclerview:recyclerview` | 1.3.2 | App list |
+| `com.google.zxing:core` | 3.5.3 | QR codes (authenticator setup, provisioning) |
 
 ### To run
 | Item | Requirement |
@@ -273,7 +284,14 @@ $adb = ".\platform-tools\adb.exe"
 
 **Clean build:** `.\gradlew.bat clean assembleDebug`
 
-**Release build:** see §10.9.
+**Release build and publishing** (for QR provisioning and auto-update): raise `versionCode`/`versionName` in `app\build.gradle.kts`, then:
+```powershell
+cd D:\TV_CLEANUP\MDM_App\tools
+.\release.ps1                                    # builds dist\DeviceGuard.apk (release, not testOnly)
+$env:GITHUB_TOKEN = "github_pat_..."             # Contents: Read and write on the repo
+.\release.ps1 -Upload -Notes "What's new"        # creates release build-<versionCode> with DeviceGuard.apk
+```
+Debug and release builds are signed with the **same key** (the PC's debug keystore by default; your own key via a git-ignored `keystore.properties`), so either can update the other. Keep installing the **debug** build on the phone while developing: only it has the `testOnly` ADB escape hatch.
 
 ---
 
@@ -336,13 +354,14 @@ Open **DeviceGuard MDM** and enter the PIN. The session locks after 5 minutes of
   1. **Use my recovery code** → the PIN is cleared → create a new PIN (and you get a new recovery code).
   2. **Reset from the PC (ADB):** with USB debugging on, run `adb shell am broadcast -a com.devguard.mdm.RESET_PIN -n com.devguard.mdm/.PinResetReceiver`. Only the ADB shell can send this (the receiver is protected by the `DUMP` permission).
 - Wrong PIN or recovery code 5 times → 30-second lockout.
-- Dashboard → **PIN & recovery**: change PIN, create a new recovery code, PC reset help.
+- Dashboard → **Settings** → Admin PIN & recovery: change PIN, create a new recovery code, PC reset help.
+- **Two-factor unlock** (Settings): after the PIN, also enter the 6-digit code from Zoho OneAuth or Google Authenticator. Turn on → scan the QR → enter one code. The recovery code and the PC reset also turn two-factor off, in case the authenticator phone is lost.
 - Resetting the PIN never turns any protection off.
 
 ### Dashboard
 - **Status card:** blue "Device protected" when Device Owner, orange "Setup needed" otherwise. Pills show web filtering, approval mode, active restriction count and Play Store state.
-- **Manage tiles:** Apps · Websites · Restrictions · Bloatware · Blocked apps · Background · Kiosk · About · Lock panel (Play Store state is shown in the status card; control it in Apps)
-- **Quick actions:** Lock now · Reboot · PIN & recovery
+- **Manage tiles:** Apps · Websites · Screen time · Restrictions · Background · Blocked apps · Bloatware · Kiosk · Settings (Play Store state is shown in the status card; control it in Apps)
+- **Quick actions:** Lock now · Reboot · Lock panel
 - **Danger zone** (red button): Remove Device Owner (releases everything) · Factory reset (type `WIPE`)
 
 ### Apps
@@ -469,6 +488,35 @@ Dashboard → **Background**:
   ```
   To let the app show which apps are Restricted, run once: `& $adb shell pm grant com.devguard.mdm android.permission.GET_APP_OPS_STATS`
 
+### Screen time
+Dashboard → **Screen time**. Needs Usage access (one-time, see §0 B); schedules work without it.
+- **Today:** time per app with a progress bar against its limit; ⛔ = paused.
+- **Daily limits:** *Add a daily limit* → pick an app → 15 min … 4 h. When the limit is reached the app is **paused until midnight** (Android's "app paused" screen) and a notification says why.
+- **Extra time:** tap an app → *Allow 15/30 more minutes / 1 more hour*. It runs even if a limit or schedule blocks it.
+- **Schedules:** *Add a schedule* → name, days, start and end time (overnight works, e.g. 22:00–06:00), apps to block, websites to block (comma separated). Inside the time window the apps are paused and the sites are added to the Chrome rules and VPN filter. Switch a schedule on/off, or tap *Edit* to change or delete it.
+- **Last 7 days:** total per day and the most-used apps of the week.
+- Checked every minute while the screen is on, and on screen on. Apps paused by another feature (approved-apps mode) stay paused. Protected apps (launcher, keyboard, SMS, phone, core system) can't be limited.
+
+### App permissions
+Apps → tap an app → **Actions… → Permissions…** → each group the app asks for (Location, Camera, Microphone, Contacts, Phone, Call log, SMS, Photos & media, Calendar, Nearby devices, Body sensors, Notifications) → **Let the user decide / Always allow / Always deny**. "Always deny" also stops the user granting it in Settings. Android may refuse some changes for some apps (shown as a message).
+
+### Wi-Fi allowlist & system updates
+Restrictions → **Wi-Fi networks**: add the current network or one by name, then **Only allow these networks**. Other networks can't be joined. If the current Wi-Fi isn't in the list, you're asked before it disconnects. Seeing the current Wi-Fi name needs Location turned on.
+Restrictions → **System updates**: phone default / install automatically / install at night (02:00–04:00) / postpone 30 days.
+
+### Settings
+Dashboard → **Settings**:
+- **Admin PIN & recovery**, **Two-factor unlock** (above).
+- **Backup & restore profile:** *Export profile…* saves a `deviceguard-profile-YYYYMMDD.json` (restrictions, hidden/suspended/uninstall-blocked apps, filters, blocked apps and sites, screen time, background list, Chrome rules, Wi-Fi list, update policy). *Import profile…* applies one. PIN, recovery code, authenticator secret and tokens are never exported.
+- **Set up another phone (QR code):** enter a public direct-download link to the **release** APK (and optionally Wi-Fi), then *Show QR*. On the new phone: welcome screen → tap 6 times → scan. Android downloads DeviceGuard, checks its signature and makes it Device Owner. Then set the PIN and import your profile. A private GitHub link won't work; use a public release or any direct-download host.
+- **App updates:** repository (default `sakthivelgreen/DeviceGaurd`) and, for a private repo, a fine-grained GitHub token with *Contents: Read-only*. *Check for updates now*, or turn on *Check daily (auto-install)*. Updates install silently as Device Owner.
+
+### NextDNS categories
+Websites → **NextDNS categories** → *Connect NextDNS…* → Profile ID (nextdns.io → Setup, e.g. `abc123`) + API key (nextdns.io → Account → API). Then:
+- **Use NextDNS as the filter**: sets Private DNS to `abc123.dns.nextdns.io` (locked, with office backup like the other filters).
+- Switch categories: Adult content, Gambling, Dating, Piracy, Social networks, Online gaming, Video streaming. Plus **SafeSearch**, **YouTube restricted mode** and **Block bypass methods**. Turning anything off goes through the Filter guard.
+- **Send my blocked sites to NextDNS**: copies your blocked-site list to the NextDNS denylist, so it applies in every app and in Private Space.
+
 ### Kiosk mode
 1. Apps → tap each app → tick **Allowed in kiosk**.
 2. Dashboard → **Kiosk** tile → **Start**. The phone shows only those apps as tiles; Back is disabled and Home returns to the kiosk screen.
@@ -504,10 +552,12 @@ MDM_App/
 ├── gradle.properties          ← JVM args, AndroidX flags
 ├── local.properties           ← sdk.dir (machine-specific)
 ├── gradlew(.bat), gradle/     ← Gradle wrapper 8.14.3
+├── .gitignore                 ← build outputs, dist/, local.properties, keystore files are not committed
 ├── platform-tools/            ← ADB (adb.exe v37 + DLLs), bundled so every command uses .\platform-tools\adb.exe
 ├── tools/
 │   ├── debloat.ps1            ← PC bloatware tool (reads app/src/main/assets/bloat.csv)
 │   ├── background.ps1         ← PC tool: Android Restricted background mode for the Background apps list
+│   ├── release.ps1            ← build release APK (+ publish GitHub release build-<versionCode>)
 │   └── debloat-log.csv        ← created by the script (undo log)
 └── app/
     ├── build.gradle.kts       ← SDK levels, version, dependencies
@@ -537,6 +587,15 @@ MDM_App/
             ├── PinResetReceiver.kt      ADB-only forgotten-PIN reset (protected by DUMP permission)
             ├── Guard.kt                 Filter guard: puzzle, maths, cooling-off wait (`Guard.require`)
             ├── AppControl.kt            Force stop (hide/unhide), no-background list, Restricted-mode ADB commands
+            ├── ScreenTime.kt            Limits, schedules, temporary unlock, usage queries, engine (evaluate)
+            ├── ScreenTimeActivity.kt    Screen time screen + schedule editor
+            ├── Totp.kt                  Two-factor TOTP (RFC 6238) + QR bitmap helper (zxing)
+            ├── AdminUi.kt               Shared dialogs: recovery code, PC reset, change PIN, TOTP prompt/setup
+            ├── SettingsActivity.kt      PIN/2FA, profile export/import, provisioning QR, app updates
+            ├── Device.kt                Wi-Fi allowlist, system update policy, per-app permissions, provisioning JSON
+            ├── Profile.kt               Policy profile export/import (JSON)
+            ├── Updater.kt               GitHub Releases auto-update (silent PackageInstaller install)
+            ├── NextDns.kt               NextDNS API: categories, SafeSearch/YouTube/bypass, denylist sync
             ├── BackgroundActivity.kt    Background apps screen
             └── Ui.kt                    UI kit: pages, cards, tiles, tabs, switches, dialogs, palette
 ```
@@ -684,6 +743,9 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | **"Lock Private DNS" also blocks DeviceGuard** | While `DISALLOW_CONFIG_PRIVATE_DNS` is on, Android's SettingsProvider **silently ignores** writes to `private_dns_*` from every app and from `adb shell settings put` (only the system Settings app is exempt, which is how vivo Settings can switch it off). `PrivateDns.write()` lifts the restriction for a moment, writes, reads it back to check, and re-applies it. To change Private DNS from the PC, first turn the lock off in the app. |
 | **Networks that block port 853** | Strict Private DNS has no fallback, so the internet dies. `SmartDns` tests 853 with bootstrap IPs (no DNS needed), then switches to the VPN filter with a DoH upstream. DeviceGuard is excluded from its own VPN (`addDisallowedApplication`) so its DoH requests and network tests go straight out. |
 | **No Device Owner API for force stop or background restriction** | Force stop = `setApplicationHidden(true)` then `false` (hiding kills the app). `GuardService` ignores the resulting "package added" broadcast (`AppControl.isIgnored`). Android's Restricted mode (`RUN_ANY_IN_BACKGROUND` appop + `restricted` standby bucket) is ADB-only, so the app builds the commands. Reading the state needs the `GET_APP_OPS_STATS` grant. Check on each launcher that hide/unhide keeps the home-screen icon in place. |
+| **testOnly per build type** | The manifest uses `android:testOnly="${testOnly}"`: `true` for debug (ADB escape hatch), `false` for release (needed for QR provisioning and auto-update, because Android refuses to install testOnly APKs there). |
+| **Usage access is ADB/Settings only** | Device Owner can't grant itself usage access: `appops set com.devguard.mdm GET_USAGE_STATS allow` (one-time). |
+| **Private GitHub repo** | The auto-updater needs a read-only token. QR provisioning needs a public APK link (the setup wizard can't send a token). |
 | **Chrome rules only work in Chrome** | Other browsers ignore Chrome policies, so **Allow only Chrome** hides other browsers (`ChromePolicy.setChromeOnly`) and `GuardService` hides newly installed ones (`ChromePolicy.isBrowser` = handles any `http` link). |
 | **Duplicate ADB device entries** | Wireless debugging can list the phone twice; use `adb -s <serial>`. |
 | **vivo account / App Clone / Private Space** | These count as accounts/users and block `set-device-owner`. Skip them in setup. |
@@ -746,5 +808,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-13 | Fix: switching to the VPN filter cleared the Private DNS filter before the VPN started, so a cancelled or stopped VPN left **no filter at all**. Now the Private DNS filter is only replaced after the VPN really starts. "No website filter is active" warning (dashboard tile turns red). Disable incognito also turns on Allow only Chrome (incognito can't be disabled in other browsers). |
 | 2026-11-13 | **Filter guard:** typing puzzle (no paste) + maths + optional cooling-off wait before weakening any website filter (Websites screen only). Code in `Guard.kt`. |
 | 2026-11-13 | **Background apps:** force stop any app; per-app "no background running" (stopped 10 s after screen off); Android Restricted mode commands + `toolsackground.ps1`; Apps dialog gets "Actions…" (Force stop / Uninstall / Bloatware) and NO-BG/STOPPED tags; dashboard Play Store tile replaced by Background. |
+| 2026-11-13 | **v2.0:** Screen time (daily limits, schedules for apps and sites, temporary unlock, 7-day usage); two-factor unlock (TOTP); per-app permission control; Wi-Fi allowlist; system update policy; profile export/import; QR provisioning; NextDNS categories; GitHub Releases auto-update + `tools\release.ps1`; release build (not testOnly, same signing key); `.gitignore` for build outputs. Dashboard: Screen time + Settings tiles. |
 
 © Sakthivel J

@@ -440,7 +440,11 @@ fun Activity.askPin(onOk: () -> Unit) {
     MaterialAlertDialogBuilder(this).setTitle("Admin PIN").setView(padded(e))
         .setPositiveButton("OK") { _, _ ->
             val err = Session.tryUnlock(this, e.text.toString())
-            if (err == null) onOk() else toast(err)
+            when {
+                err != null -> toast(err)
+                Totp.enabled(this) -> { Session.lock(); totpPrompt { Session.unlockNow(); onOk() } }
+                else -> onOk()
+            }
         }
         .setNegativeButton("Cancel", null).show()
 }

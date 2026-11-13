@@ -404,7 +404,8 @@ object ChromePolicy {
         if (!m.isOwner) return "Device Owner required"
         val b = Bundle()
         if (Prefs.getFlag(c, Prefs.CHROME_ON)) {
-            b.putStringArray("URLBlocklist", Prefs.domains(c).sorted().toTypedArray())
+            // Your list + sites blocked by an active screen-time schedule.
+            b.putStringArray("URLBlocklist", (Prefs.domains(c) + Prefs.stSites(c)).sorted().toTypedArray())
             if (Prefs.getFlag(c, Prefs.CHROME_SAFESITES)) b.putInt("SafeSitesFilterBehavior", 1)
             if (Prefs.getFlag(c, Prefs.CHROME_SAFESEARCH)) b.putBoolean("ForceGoogleSafeSearch", true)
             if (Prefs.getFlag(c, Prefs.CHROME_YOUTUBE)) b.putInt("ForceYouTubeRestrict", 1)

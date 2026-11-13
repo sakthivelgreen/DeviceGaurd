@@ -17,8 +17,9 @@ class PinResetReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         if (i.action != ACTION) return
         Prefs.clearPin(c)
+        Totp.disable(c) // also clear the authenticator lock (phone with the authenticator may be lost)
         Session.lock()
-        resultData = "DeviceGuard PIN cleared. Open the app on the phone to create a new PIN."
+        resultData = "DeviceGuard PIN cleared (and two-factor turned off). Open the app on the phone to create a new PIN."
     }
 
     companion object {

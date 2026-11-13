@@ -15,9 +15,54 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
  */
 class WebActivity : BaseActivity() {
 
+    // NextDNS state (loaded from the API in the background)
+    private var nd: NextDns.State? = null
+    private var ndError: String? = null
+
     override fun onResume() {
         super.onResume()
-        if (!isFinishing) render()
+        if (!isFinishing) { render(); loadNextDns() }
+    }
+
+    private fun loadNextDns() {
+        if (!NextDns.configured(this)) return
+        Thread {
+            val r = runCatching { NextDns.load(this) }
+            runOnUiThread {
+                nd = r.getOrNull(); ndError = r.exceptionOrNull()?.message
+                if (!isFinishing) render()
+            }
+        }.start()
+    }
+
+    /** Runs a NextDNS API change in the background, then reloads the state. */
+    private fun ndCall(block: () -> Unit) {
+        Thread {
+            val r = runCatching(block)
+            runOnUiThread { r.exceptionOrNull()?.let { toast(it.message) }; loadNextDns() }
+        }.start()
+    }
+
+    private fun nextDnsSetup() {
+        val col = column()
+        val id = EditText(this).apply { hint = "Profile ID, e.g. abc123"; setText(NextDns.id(this@WebActivity) ?: ""); isSingleLine = true }
+        val key = EditText(this).apply {
+            hint = "API key"
+            isSingleLine = true
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
+        }
+        col.text("Profile ID: nextdns.io → Setup tab (\"ID: abc123\").", 12f).alpha = 0.7f
+        col.addView(id)
+        col.text("API key: nextdns.io → Account → API. Leave empty to keep the saved key.", 12f).alpha = 0.7f
+        col.addView(key)
+        MaterialAlertDialogBuilder(this).setTitle("Connect NextDNS").setView(col)
+            .setPositiveButton("Save") { _, _ ->
+                Prefs.setStr(this, Prefs.NEXTDNS_ID, id.text.toString().trim())
+                if (key.text.isNotBlank()) Prefs.setStr(this, Prefs.NEXTDNS_KEY, key.text.toString().trim())
+                nd = null; ndError = null
+                render(); loadNextDns()
+            }
+            .setNegativeButton("Cancel", null).show()
     }
 
     @Deprecated("Deprecated in Java")
@@ -197,6 +242,50 @@ class WebActivity : BaseActivity() {
                 }
             }
             button("Choose filter") { choosePrivateDns() }.isEnabled = owner
+            }
+
+            // ---- NextDNS categories ----
+            card("NextDNS categories") {
+                text(
+                    "Use your own NextDNS profile as the filter and choose categories (adult, gambling, social…) here. " +
+                        "Works in every app and in Private Space. Needs a free nextdns.io account.",
+                    13f,
+                ).alpha = 0.8f
+                if (!NextDns.configured(context)) {
+                    button("Connect NextDNS…") { nextDnsSetup() }.isEnabled = owner
+                } else {
+                    val using = Prefs.privateDnsHost(context) == NextDns.host(context)
+                    text("Profile: ${NextDns.id(context)}" + if (using) " · ✅ in use" else "", 14f, bold = true)
+                    if (!using) button("Use NextDNS as the filter") { setPrivateDns(NextDns.host(this@WebActivity)) }.isEnabled = owner
+                    val st = nd
+                    when {
+                        ndError != null -> text("⚠️ $ndError", 12f, color = Palette.ORANGE)
+                        st == null -> text("Loading categories…", 12f).alpha = 0.6f
+                        else -> {
+                            NextDns.CATEGORIES.forEach { (id, name) ->
+                                switchRow(name, null, st.categories[id] == true, owner) { _, on ->
+                                    guardOff("turn off NextDNS \"$name\"", on) { ndCall { NextDns.setCategory(this@WebActivity, id, on) } }
+                                }
+                            }
+                            switchRow("SafeSearch", "Google, Bing, YouTube search", st.safeSearch, owner) { _, on ->
+                                guardOff("turn off SafeSearch", on) { ndCall { NextDns.setFlag(this@WebActivity, "safeSearch", on) } }
+                            }
+                            switchRow("YouTube restricted mode", null, st.youtube, owner) { _, on ->
+                                guardOff("turn off YouTube restricted mode", on) { ndCall { NextDns.setFlag(this@WebActivity, "youtubeRestrictedMode", on) } }
+                            }
+                            switchRow("Block bypass methods", "VPNs, proxies, other DNS", st.blockBypass, owner) { _, on ->
+                                guardOff("allow bypass methods", on) { ndCall { NextDns.setFlag(this@WebActivity, "blockBypass", on) } }
+                            }
+                        }
+                    }
+                    button("Send my blocked sites to NextDNS", outlined = true) {
+                        Thread {
+                            val r = runCatching { NextDns.syncDenylist(this@WebActivity) }
+                            runOnUiThread { toast(r.fold({ "$it site(s) added to NextDNS" }, { it.message })) }
+                        }.start()
+                    }.isEnabled = owner
+                    button("Change NextDNS account…", outlined = true) { nextDnsSetup() }
+                }
             }
 
             // ---- Smart DNS: office-network backup ----

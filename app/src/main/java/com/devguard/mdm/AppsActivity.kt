@@ -196,10 +196,11 @@ class AppsActivity : BaseActivity() {
 
     /** Force stop, plus Uninstall (user apps) or Bloatware (system apps). */
     private fun actions(a: AppItem) {
-        val items = listOf("Force stop now", if (a.system) "Open Bloatware" else "Uninstall")
+        val items = listOf("Force stop now", "Permissions…", if (a.system) "Open Bloatware" else "Uninstall")
         MaterialAlertDialogBuilder(this).setTitle(a.label)
             .setItems(items.toTypedArray()) { _, i ->
                 when {
+                    i == 1 -> permissions(a)
                     i == 0 -> {
                         AppControl.protectedReason(this, a.pkg)?.let { toast(it); return@setItems }
                         Thread {
@@ -215,6 +216,25 @@ class AppsActivity : BaseActivity() {
                     else -> confirm("Uninstall ${a.label}?", "The app and its data are removed from the phone.", "Uninstall") { uninstall(a) }
                 }
             }.show()
+    }
+
+    /** Per-app permission control: Let the user decide / Always allow / Always deny, per permission group. */
+    private fun permissions(a: AppItem) {
+        val groups = Device.permissionGroups(this, a.pkg)
+        if (groups.isEmpty()) { toast("${a.label} doesn't ask for any sensitive permissions"); return }
+        val labels = groups.map { (name, _, s) -> "$name: ${Device.GRANT_STATES[s]}" }.toTypedArray()
+        MaterialAlertDialogBuilder(this).setTitle("${a.label}: permissions")
+            .setItems(labels) { _, i ->
+                val (name, perms, cur) = groups[i]
+                MaterialAlertDialogBuilder(this).setTitle(name)
+                    .setSingleChoiceItems(Device.GRANT_STATES.toTypedArray(), cur) { d, s ->
+                        d.dismiss()
+                        val failed = Device.setGroup(this, a.pkg, perms, s)
+                        toast(if (failed == 0) "$name: ${Device.GRANT_STATES[s]}" else "$name: $failed permission(s) can't be changed by Android")
+                        permissions(a)
+                    }.show()
+            }
+            .setNegativeButton("Close", null).show()
     }
 
     /** Silent uninstall (Device Owner only). */

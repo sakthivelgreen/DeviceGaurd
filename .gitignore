@@ -1,3 +1,17 @@
 .gradle/
 .kotlin/
 .idea/
+
+# Build outputs (rebuild with .\gradlew.bat assembleDebug / tools\release.ps1)
+build/
+app/build/
+dist/
+
+# Machine-specific / secrets
+local.properties
+keystore.properties
+*.jks
+*.keystore
+
+# Tool logs
+tools/debloat-log.csv

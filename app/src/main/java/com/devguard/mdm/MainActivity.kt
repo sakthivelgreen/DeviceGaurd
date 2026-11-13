@@ -65,7 +65,12 @@ class MainActivity : AppCompatActivity() {
                     }
                 } else {
                     val err = Session.tryUnlock(this@MainActivity, a)
-                    if (err == null) render() else { toast(err); p1.text.clear() }
+                    when {
+                        err != null -> { toast(err); p1.text.clear() }
+                        // Two-factor: PIN alone isn't enough; ask for the authenticator code.
+                        Totp.enabled(this@MainActivity) -> { Session.lock(); totpPrompt { Session.unlockNow(); render() } }
+                        else -> render()
+                    }
                 }
             }
             if (!setup) button("Forgot PIN?", outlined = true) { forgotPin() }
@@ -75,22 +80,7 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------- PIN recovery
 
-    /** Shows a newly created recovery code once. It can't be shown again; only a new one can be made. */
-    private fun showRecoveryCode(code: String, then: () -> Unit) {
-        val col = column()
-        col.text("Write this down and keep it somewhere safe (not on this phone). It's the only way to reset a forgotten PIN on the phone itself.", 14f)
-        col.text(code, 26f, bold = true, color = Palette.BLUE).apply {
-            gravity = Gravity.CENTER
-            setTextIsSelectable(true)
-            typeface = android.graphics.Typeface.MONOSPACE
-            setPadding(0, dp(16), 0, dp(16))
-        }
-        col.text("A new code replaces the old one each time the PIN is set.", 12f).alpha = 0.6f
-        MaterialAlertDialogBuilder(this).setTitle("Your recovery code").setView(col).setCancelable(false)
-            .setNeutralButton("Copy") { _, _ -> Bloat.copy(this, code); then() }
-            .setPositiveButton("I've saved it") { _, _ -> then() }
-            .show()
-    }
+    private fun showRecoveryCode(code: String, then: () -> Unit) = showRecoveryCodeDialog(code, then)
 
     private fun forgotPin() {
         MaterialAlertDialogBuilder(this).setTitle("Forgot PIN?")
@@ -114,6 +104,7 @@ class MainActivity : AppCompatActivity() {
                 val err = Session.tryRecovery(this, e.text.toString())
                 if (err == null) {
                     Prefs.clearPin(this)
+                    Totp.disable(this) // the recovery code also resets the authenticator lock
                     toast("Recovery code accepted. Create a new PIN.")
                     render()
                 } else toast(err)
@@ -121,28 +112,7 @@ class MainActivity : AppCompatActivity() {
             .setNegativeButton("Cancel", null).show()
     }
 
-    private fun pcResetHelp() {
-        val col = column()
-        col.text("Connect the phone to your PC (USB debugging on) and run:", 14f)
-        col.text(PinResetReceiver.ADB_COMMAND, 12f, bold = true).setTextIsSelectable(true)
-        col.text("Then open DeviceGuard again and create a new PIN. All protections stay on.", 13f).alpha = 0.7f
-        MaterialAlertDialogBuilder(this).setTitle("Reset PIN from the PC").setView(col)
-            .setPositiveButton("OK", null).show()
-    }
-
-    /** PIN & recovery menu (dashboard). */
-    private fun securityMenu() {
-        MaterialAlertDialogBuilder(this).setTitle("PIN & recovery")
-            .setItems(arrayOf("Change admin PIN", "Create a new recovery code", "How to reset from the PC")) { _, i ->
-                when (i) {
-                    0 -> changePin()
-                    1 -> confirm("New recovery code?", "The old recovery code stops working.", "Create") {
-                        showRecoveryCode(Prefs.newRecoveryCode(this)) { render() }
-                    }
-                    2 -> pcResetHelp()
-                }
-            }.show()
-    }
+    private fun pcResetHelp() = pcResetHelpDialog()
 
     // ---------------------------------------------------------- dashboard
 
@@ -192,17 +162,21 @@ class MainActivity : AppCompatActivity() {
                 Tile("Websites", R.drawable.ic_web, if (webOn) Palette.GREEN else Palette.RED, if (webOn) "Filtering" else "⚠ No filter") {
                     open(WebActivity::class.java)
                 },
+                Tile("Screen time", R.drawable.ic_kiosk, Palette.INDIGO,
+                    "${ScreenTime.limits(context).size} limits · ${ScreenTime.schedules(context).count { it.enabled }} sched") {
+                    open(ScreenTimeActivity::class.java)
+                },
                 Tile("Restrictions", R.drawable.ic_tune, Palette.PURPLE, "$activeRestrictions active") {
                     open(RestrictionsActivity::class.java)
                 },
-                Tile("Bloatware", R.drawable.ic_delete, Palette.PINK, "Clean up") {
-                    open(BloatActivity::class.java)
+                Tile("Background", R.drawable.ic_restart, Palette.TEAL, "${Prefs.noBackgroundPkgs(context).size} apps") {
+                    open(BackgroundActivity::class.java)
                 },
                 Tile("Blocked apps", R.drawable.ic_lock, Palette.RED, "${Prefs.blockedPkgs(context).size} blocked") {
                     open(BlockListActivity::class.java)
                 },
-                Tile("Background", R.drawable.ic_restart, Palette.TEAL, "${Prefs.noBackgroundPkgs(context).size} apps") {
-                    open(BackgroundActivity::class.java)
+                Tile("Bloatware", R.drawable.ic_delete, Palette.PINK, "Clean up") {
+                    open(BloatActivity::class.java)
                 },
                 Tile("Kiosk", R.drawable.ic_kiosk, Palette.ORANGE, "${Prefs.kioskPkgs(context).size} apps") {
                     confirm(
@@ -211,8 +185,9 @@ class MainActivity : AppCompatActivity() {
                         "Start",
                     ) { Kiosk.start(this@MainActivity)?.let { toast(it) } }
                 },
-                Tile("About", R.drawable.ic_info, Palette.SLATE) { open(AboutActivity::class.java) },
-                Tile("Lock panel", R.drawable.ic_exit, Palette.SLATE) { Session.lock(); render() },
+                Tile("Settings", R.drawable.ic_key, Palette.SLATE, if (Totp.enabled(context)) "2FA on" else "PIN, backup") {
+                    open(SettingsActivity::class.java)
+                },
             ))
 
             section("Quick actions")
@@ -221,7 +196,7 @@ class MainActivity : AppCompatActivity() {
                 Tile("Reboot", R.drawable.ic_restart, Palette.INDIGO, enabled = m.isOwner) {
                     confirm("Reboot?", "The phone will restart now.", "Reboot") { act { m.dpm.reboot(m.admin) } }
                 },
-                Tile("PIN & recovery", R.drawable.ic_key, Palette.INDIGO) { securityMenu() },
+                Tile("Lock panel", R.drawable.ic_exit, Palette.SLATE) { Session.lock(); render() },
             ))
             button("Danger zone", outlined = true) { dangerZone(m) }.apply {
                 setTextColor(Palette.RED)
@@ -250,23 +225,6 @@ class MainActivity : AppCompatActivity() {
                 "Release",
             ) { act { m.releaseAll(this); toast("Device Owner removed"); render() } }
         } else wipe(m)
-    }
-
-    private fun changePin() {
-        val col = column()
-        val p1 = pinField("New PIN")
-        val p2 = pinField("Confirm PIN")
-        col.addView(p1); col.addView(p2)
-        MaterialAlertDialogBuilder(this).setTitle("Change admin PIN").setView(col)
-            .setPositiveButton("Save") { _, _ ->
-                val a = p1.text.toString()
-                when {
-                    a.length !in 4..12 -> toast("PIN must be 4–12 digits")
-                    a != p2.text.toString() -> toast("PINs don't match")
-                    else -> { Prefs.setPin(this, a); toast("PIN changed") }
-                }
-            }
-            .setNegativeButton("Cancel", null).show()
     }
 
     private fun wipe(m: Mdm) {

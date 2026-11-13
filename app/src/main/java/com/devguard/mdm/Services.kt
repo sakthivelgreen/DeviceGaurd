@@ -38,7 +38,7 @@ class DnsVpnService : VpnService() {
         @Volatile private var dohUrl: String? = null
 
         fun reload(c: Context) {
-            blocked = Prefs.domains(c).map { it.lowercase() }.toSet()
+            blocked = (Prefs.domains(c) + Prefs.stSites(c)).map { it.lowercase() }.toSet()
             office = Prefs.officeDomains(c).map { it.lowercase() }.toSet()
             val host = Prefs.privateDnsHost(c)
             if (SmartDns.fallbackActive(c) && host != null) {
@@ -252,7 +252,7 @@ class GuardService : Service() {
         private const val CHANNEL = "guard"
         fun needed(c: Context) = Prefs.approvalMode(c) || Prefs.blockedPkgs(c).isNotEmpty() ||
             Prefs.getFlag(c, Prefs.CHROME_ONLY) || SmartDns.enabled(c) || SmartDns.fallbackActive(c) ||
-            Prefs.noBackgroundPkgs(c).isNotEmpty() ||
+            Prefs.noBackgroundPkgs(c).isNotEmpty() || ScreenTime.needed(c) || Prefs.getFlag(c, Prefs.UPD_AUTO) ||
             (Prefs.privateDnsHost(c) != null && PrivateDns.canWrite(c))
         fun start(c: Context) { c.startForegroundService(Intent(c, GuardService::class.java)) }
         /** Start or stop the watcher depending on current settings. */
@@ -305,9 +305,17 @@ class GuardService : Service() {
         runCatching { connectivity.registerDefaultNetworkCallback(netCallback) }
 
         // Background apps: stop listed apps shortly after the screen turns off.
-        val sf = IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON) }
+        val sf = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_TIME_TICK)        // screen time: every minute while awake
+            addAction(Intent.ACTION_TIME_CHANGED); addAction(Intent.ACTION_DATE_CHANGED)
+        }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, sf, RECEIVER_EXPORTED) else registerReceiver(screenReceiver, sf)
+        work.execute { runCatching { ScreenTime.evaluate(this) } }
     }
+
+    /** Separate worker for screen time and updates (netExec is busy with network checks / force stops). */
+    private val work = Executors.newSingleThreadExecutor()
 
     // ---- Background apps: stop on screen off ----
     private val stopListedRunnable = Runnable {
@@ -316,6 +324,14 @@ class GuardService : Service() {
 
     private val screenReceiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
+            if (i.action != Intent.ACTION_SCREEN_OFF) {
+                // Every minute / screen on / clock change: screen time, plus a daily update check.
+                work.execute {
+                    runCatching { ScreenTime.evaluate(c) }
+                    if (i.action == Intent.ACTION_SCREEN_ON) runCatching { Updater.autoCheck(c) }
+                }
+                if (i.action == Intent.ACTION_TIME_TICK) return
+            }
             netHandler.removeCallbacks(stopListedRunnable)
             if (i.action == Intent.ACTION_SCREEN_OFF &&
                 !Prefs.getFlag(c, Prefs.BG_SCREEN_OFF_OFF) &&
@@ -375,6 +391,7 @@ class GuardService : Service() {
         runCatching { unregisterReceiver(screenReceiver) }
         netHandler.removeCallbacks(stopListedRunnable)
         netExec.shutdownNow()
+        work.shutdownNow()
         super.onDestroy()
     }
 }
