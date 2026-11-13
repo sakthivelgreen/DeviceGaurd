@@ -159,6 +159,8 @@ class AppsActivity : BaseActivity() {
         if (m.isSuspended(a.pkg)) tags += "SUSPENDED"
         if (m.isUninstallBlocked(a.pkg)) tags += "NO-UNINSTALL"
         if (a.pkg in Prefs.kioskPkgs(this)) tags += "KIOSK"
+        if (a.pkg in Prefs.noBackgroundPkgs(this)) tags += "NO-BG"
+        if (AppControl.isStopped(this, a.pkg)) tags += "STOPPED"
         if (Prefs.approvalMode(this) && a.pkg !in Prefs.approved(this)) tags += "UNAPPROVED"
         if (a.system) tags += "system"
         return tags.joinToString(" · ")
@@ -172,10 +174,12 @@ class AppsActivity : BaseActivity() {
             "Block uninstall",
             "Approved (for approved-apps mode)",
             "Allowed in kiosk mode",
+            "No background running (stopped when the screen turns off)",
         )
         val cur = booleanArrayOf(
             m.isHidden(a.pkg), m.isSuspended(a.pkg), m.isUninstallBlocked(a.pkg),
             a.pkg in Prefs.approved(this), a.pkg in Prefs.kioskPkgs(this),
+            a.pkg in Prefs.noBackgroundPkgs(this),
         )
         val next = cur.copyOf()
         val dlg = MaterialAlertDialogBuilder(this).setTitle(a.label)
@@ -186,10 +190,31 @@ class AppsActivity : BaseActivity() {
                 else apply(a, cur, next)
             }
             .setNegativeButton("Cancel", null)
-        if (!a.system) dlg.setNeutralButton("Uninstall") { _, _ ->
-            confirm("Uninstall ${a.label}?", "The app and its data are removed from the phone.", "Uninstall") { uninstall(a) }
-        } else dlg.setNeutralButton("Bloatware…") { _, _ -> startActivity(android.content.Intent(this, BloatActivity::class.java)) }
+        dlg.setNeutralButton("Actions…") { _, _ -> actions(a) }
         dlg.show()
+    }
+
+    /** Force stop, plus Uninstall (user apps) or Bloatware (system apps). */
+    private fun actions(a: AppItem) {
+        val items = listOf("Force stop now", if (a.system) "Open Bloatware" else "Uninstall")
+        MaterialAlertDialogBuilder(this).setTitle(a.label)
+            .setItems(items.toTypedArray()) { _, i ->
+                when {
+                    i == 0 -> {
+                        AppControl.protectedReason(this, a.pkg)?.let { toast(it); return@setItems }
+                        Thread {
+                            val err = AppControl.forceStop(this, a.pkg)
+                            runOnUiThread {
+                                toast(err ?: "${a.label} stopped")
+                                val idx = shown.indexOf(a)
+                                if (idx >= 0) adapter.notifyItemChanged(idx + 1)
+                            }
+                        }.start()
+                    }
+                    a.system -> startActivity(android.content.Intent(this, BloatActivity::class.java))
+                    else -> confirm("Uninstall ${a.label}?", "The app and its data are removed from the phone.", "Uninstall") { uninstall(a) }
+                }
+            }.show()
     }
 
     /** Silent uninstall (Device Owner only). */
@@ -211,6 +236,10 @@ class AppsActivity : BaseActivity() {
             if (cur[4] != next[4]) {
                 val k = Prefs.kioskPkgs(this)
                 Prefs.setKioskPkgs(this, if (next[4]) k + a.pkg else k - a.pkg)
+            }
+            if (cur[5] != next[5]) {
+                val reason = if (next[5]) AppControl.protectedReason(this, a.pkg) else null
+                if (reason != null) toast(reason) else AppControl.setNoBackground(this, a.pkg, next[5])
             }
         }
         // Refresh only this row so the list stays where it is.

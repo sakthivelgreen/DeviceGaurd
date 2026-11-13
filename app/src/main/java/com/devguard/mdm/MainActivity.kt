@@ -201,8 +201,8 @@ class MainActivity : AppCompatActivity() {
                 Tile("Blocked apps", R.drawable.ic_lock, Palette.RED, "${Prefs.blockedPkgs(context).size} blocked") {
                     open(BlockListActivity::class.java)
                 },
-                Tile("Play Store", R.drawable.ic_shop, Palette.TEAL, playState) {
-                    open(AppsActivity::class.java)
+                Tile("Background", R.drawable.ic_restart, Palette.TEAL, "${Prefs.noBackgroundPkgs(context).size} apps") {
+                    open(BackgroundActivity::class.java)
                 },
                 Tile("Kiosk", R.drawable.ic_kiosk, Palette.ORANGE, "${Prefs.kioskPkgs(context).size} apps") {
                     confirm(

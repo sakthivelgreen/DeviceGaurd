@@ -76,6 +76,7 @@ Good for previewing the UI on any phone. Controls stay disabled ("Setup needed")
    & $adb shell pm grant com.devguard.mdm android.permission.WRITE_SECURE_SETTINGS
    ```
    It survives app updates (`install -r`), but has to be run again after an uninstall or reset.
+   Optional, so Background apps can show Android's Restricted state: `& $adb shell pm grant com.devguard.mdm android.permission.GET_APP_OPS_STATS`
 5. On the phone: open **DeviceGuard MDM** → create the **admin PIN**. The dashboard card turns blue: **"Device protected"**.
 6. Now sign in to Google and other accounts and reinstall your apps, before turning on account/install restrictions.
 
@@ -176,6 +177,7 @@ Security: the ADB reset only accepts the ADB shell (the receiver requires the `D
 | **Website blocking** | (1) **Family-safe filter, no VPN**: forced and locked Private DNS (Cloudflare Family / Security, AdGuard Family, or custom such as NextDNS). (2) **Chrome rules, no VPN**: your blocked-site list, adult filter, SafeSearch, YouTube restricted mode, no incognito, and hide other browsers. (3) **Optional VPN DNS filter**: your list in every app. |
 | **Device restrictions** | Camera, screenshots, factory reset, safe mode, add users, accounts, app settings, developer options/ADB, installs/uninstalls, sideloading, Wi-Fi, mobile network, hotspot, Bluetooth, VPN, Private DNS, USB file transfer, SD card, date/time, location, calls, SMS. |
 | **Bloatware** | Every built-in app rated **Safe / Caution / Keep / Unknown** in 2×2 tabs. **Per-app on/off switch**, restore, and copyable ADB "remove completely" command. PC script `tools\debloat.ps1` for bulk list/disable/remove/restore with an undo log. |
+| **Background apps** | **Force stop** any app (Apps → app → Actions…, or Background apps → tap). **No background running** per app: listed apps are force-stopped ~10 s after the screen turns off. Optional Android **Restricted** mode over ADB (`toolsackground.ps1`). |
 | **Kiosk mode** | Lock the phone to chosen apps (lock task mode plus a forced home screen showing app tiles). |
 | **Device actions** | Lock now, reboot, change PIN, release Device Owner, factory reset. |
 | **Self-protection** | The MDM can't be uninstalled while it is Device Owner. Admin PIN (salted, 10,000× SHA-256), 5-minute session, 30-second lockout after 5 wrong tries. |
@@ -339,7 +341,7 @@ Open **DeviceGuard MDM** and enter the PIN. The session locks after 5 minutes of
 
 ### Dashboard
 - **Status card:** blue "Device protected" when Device Owner, orange "Setup needed" otherwise. Pills show web filtering, approval mode, active restriction count and Play Store state.
-- **Manage tiles:** Apps · Websites · Restrictions · Bloatware · Blocked apps · Play Store · Kiosk · About · Lock panel
+- **Manage tiles:** Apps · Websites · Restrictions · Bloatware · Blocked apps · Background · Kiosk · About · Lock panel (Play Store state is shown in the status card; control it in Apps)
 - **Quick actions:** Lock now · Reboot · PIN & recovery
 - **Danger zone** (red button): Remove Device Owner (releases everything) · Factory reset (type `WIPE`)
 
@@ -451,6 +453,22 @@ Switches grouped in cards. Recommended baseline: Block factory reset, Block safe
 ```
 Bulk actions are allowed only for SAFE or CAUTION. Every change is logged in `tools\debloat-log.csv`.
 
+### Background apps (force stop + no background running)
+Dashboard → **Background**:
+- **Tap an app** → **Force stop**. It's closed completely (same as Settings → Force stop), and its notifications and alarms stop until it's opened again. Also available in **Apps → tap app → Actions… → Force stop now**.
+- **Switch next to an app = no background running.** About **10 s after the screen turns off**, DeviceGuard force-stops every switched-on app. Turning the screen back on within 10 s cancels it. The apps start normally when you open them. The **Stop when screen turns off** switch, **Last run**, and **Stop all listed apps now** are at the top.
+- Status per app: **Stopped** / **Can run**, plus **Android Restricted** once the PC mode is applied (after the one-time grant below).
+- Messaging and alarm apps (WhatsApp, Telegram, Zoho Cliq/Mail, Gmail, Clock, OneAuth, Spotify) show a warning: they won't get messages, alarms or playback while stopped.
+- Can't be stopped: DeviceGuard, core system apps (Keep list), the home screen app, keyboard, SMS app and phone app.
+- **Android Restricted mode (optional, PC):** Android's own "Restricted" battery mode blocks *all* background work and survives reboots, but only ADB can set it. Use **Copy apply command** in the app, or run from `MDM_App\tools`:
+  ```powershell
+  .\background.ps1 -Action status      # state of every app on the Background list
+  .\background.ps1 -Action apply       # restrict them all
+  .\background.ps1 -Action undo        # back to normal
+  .\background.ps1 -Action apply -Package org.videolan.vlc
+  ```
+  To let the app show which apps are Restricted, run once: `& $adb shell pm grant com.devguard.mdm android.permission.GET_APP_OPS_STATS`
+
 ### Kiosk mode
 1. Apps → tap each app → tick **Allowed in kiosk**.
 2. Dashboard → **Kiosk** tile → **Start**. The phone shows only those apps as tiles; Back is disabled and Home returns to the kiosk screen.
@@ -489,6 +507,7 @@ MDM_App/
 ├── platform-tools/            ← ADB (adb.exe v37 + DLLs), bundled so every command uses .\platform-tools\adb.exe
 ├── tools/
 │   ├── debloat.ps1            ← PC bloatware tool (reads app/src/main/assets/bloat.csv)
+│   ├── background.ps1         ← PC tool: Android Restricted background mode for the Background apps list
 │   └── debloat-log.csv        ← created by the script (undo log)
 └── app/
     ├── build.gradle.kts       ← SDK levels, version, dependencies
@@ -517,6 +536,8 @@ MDM_App/
             ├── Prefs.kt                 SharedPreferences store, PIN + recovery-code hashing, Session (timeout/lockout)
             ├── PinResetReceiver.kt      ADB-only forgotten-PIN reset (protected by DUMP permission)
             ├── Guard.kt                 Filter guard: puzzle, maths, cooling-off wait (`Guard.require`)
+            ├── AppControl.kt            Force stop (hide/unhide), no-background list, Restricted-mode ADB commands
+            ├── BackgroundActivity.kt    Background apps screen
             └── Ui.kt                    UI kit: pages, cards, tiles, tabs, switches, dialogs, palette
 ```
 
@@ -662,6 +683,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | **vivo ignores "Lock Private DNS"** | The restriction is applied (`dumpsys device_policy` shows `disallow_config_private_dns = true`), but vivo's custom Private DNS screen doesn't check it. Fix: `WRITE_SECURE_SETTINGS` granted over ADB. `GuardService` watches `private_dns_mode`/`private_dns_specifier` with a `ContentObserver` and restores the chosen host (`PrivateDns.enforce`). |
 | **"Lock Private DNS" also blocks DeviceGuard** | While `DISALLOW_CONFIG_PRIVATE_DNS` is on, Android's SettingsProvider **silently ignores** writes to `private_dns_*` from every app and from `adb shell settings put` (only the system Settings app is exempt, which is how vivo Settings can switch it off). `PrivateDns.write()` lifts the restriction for a moment, writes, reads it back to check, and re-applies it. To change Private DNS from the PC, first turn the lock off in the app. |
 | **Networks that block port 853** | Strict Private DNS has no fallback, so the internet dies. `SmartDns` tests 853 with bootstrap IPs (no DNS needed), then switches to the VPN filter with a DoH upstream. DeviceGuard is excluded from its own VPN (`addDisallowedApplication`) so its DoH requests and network tests go straight out. |
+| **No Device Owner API for force stop or background restriction** | Force stop = `setApplicationHidden(true)` then `false` (hiding kills the app). `GuardService` ignores the resulting "package added" broadcast (`AppControl.isIgnored`). Android's Restricted mode (`RUN_ANY_IN_BACKGROUND` appop + `restricted` standby bucket) is ADB-only, so the app builds the commands. Reading the state needs the `GET_APP_OPS_STATS` grant. Check on each launcher that hide/unhide keeps the home-screen icon in place. |
 | **Chrome rules only work in Chrome** | Other browsers ignore Chrome policies, so **Allow only Chrome** hides other browsers (`ChromePolicy.setChromeOnly`) and `GuardService` hides newly installed ones (`ChromePolicy.isBrowser` = handles any `http` link). |
 | **Duplicate ADB device entries** | Wireless debugging can list the phone twice; use `adb -s <serial>`. |
 | **vivo account / App Clone / Private Space** | These count as accounts/users and block `set-device-owner`. Skip them in setup. |
@@ -723,5 +745,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-10 | **Office network backup (Smart DNS):** network watcher, port-853 test on connect, remembered blocking networks, backup VPN filter over DoH, office domains (split DNS), status card. **PIN recovery:** one-time recovery code, "Forgot PIN?" on the lock screen, ADB reset receiver, dashboard reminder, PIN & recovery tile. |
 | 2026-11-13 | Fix: switching to the VPN filter cleared the Private DNS filter before the VPN started, so a cancelled or stopped VPN left **no filter at all**. Now the Private DNS filter is only replaced after the VPN really starts. "No website filter is active" warning (dashboard tile turns red). Disable incognito also turns on Allow only Chrome (incognito can't be disabled in other browsers). |
 | 2026-11-13 | **Filter guard:** typing puzzle (no paste) + maths + optional cooling-off wait before weakening any website filter (Websites screen only). Code in `Guard.kt`. |
+| 2026-11-13 | **Background apps:** force stop any app; per-app "no background running" (stopped 10 s after screen off); Android Restricted mode commands + `toolsackground.ps1`; Apps dialog gets "Actions…" (Force stop / Uninstall / Bloatware) and NO-BG/STOPPED tags; dashboard Play Store tile replaced by Background. |
 
 © Sakthivel J

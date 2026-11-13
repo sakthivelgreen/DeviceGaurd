@@ -45,6 +45,7 @@
         <activity android:name=".RestrictionsActivity" android:exported="false" />
         <activity android:name=".AboutActivity" android:exported="false" />
         <activity android:name=".BloatActivity" android:exported="false" />
+        <activity android:name=".BackgroundActivity" android:exported="false" />
         <activity android:name=".BlockListActivity" android:exported="false" android:windowSoftInputMode="adjustResize" />
 
         <activity

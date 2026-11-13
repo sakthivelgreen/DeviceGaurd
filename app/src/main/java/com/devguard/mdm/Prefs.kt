@@ -69,6 +69,13 @@ object Prefs {
     fun setDomains(c: Context, v: Set<String>) = putSet(c, "domains", v)
     fun webBlock(c: Context) = flag(c, "webBlock")
     fun setWebBlock(c: Context, v: Boolean) = putFlag(c, "webBlock", v)
+    // ---- Background apps ----
+    const val BG_SCREEN_OFF_OFF = "bgScreenOffOff" // default ON (flag is "off")
+    const val BG_LAST_RUN = "bgLastRun"
+    const val BG_LAST_COUNT = "bgLastCount"
+    fun noBackgroundPkgs(c: Context) = set(c, "noBackgroundPkgs")
+    fun setNoBackgroundPkgs(c: Context, v: Set<String>) = putSet(c, "noBackgroundPkgs", v)
+
     // ---- Filter guard (self-control lock) ----
     const val GUARD_ON = "guardOn"
     const val GUARD_DELAY = "guardDelayMin"

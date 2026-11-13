@@ -252,6 +252,7 @@ class GuardService : Service() {
         private const val CHANNEL = "guard"
         fun needed(c: Context) = Prefs.approvalMode(c) || Prefs.blockedPkgs(c).isNotEmpty() ||
             Prefs.getFlag(c, Prefs.CHROME_ONLY) || SmartDns.enabled(c) || SmartDns.fallbackActive(c) ||
+            Prefs.noBackgroundPkgs(c).isNotEmpty() ||
             (Prefs.privateDnsHost(c) != null && PrivateDns.canWrite(c))
         fun start(c: Context) { c.startForegroundService(Intent(c, GuardService::class.java)) }
         /** Start or stop the watcher depending on current settings. */
@@ -264,6 +265,7 @@ class GuardService : Service() {
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
             val pkg = i.data?.schemeSpecificPart ?: return
+            if (AppControl.isIgnored(pkg)) return // unhide after a force stop, not a real install
             if (Blocklist.onInstalled(c, pkg)) return
             if (ChromePolicy.onInstalled(c, pkg)) return
             if (i.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
@@ -301,6 +303,25 @@ class GuardService : Service() {
 
         // Smart DNS: check every network the moment it connects or changes.
         runCatching { connectivity.registerDefaultNetworkCallback(netCallback) }
+
+        // Background apps: stop listed apps shortly after the screen turns off.
+        val sf = IntentFilter().apply { addAction(Intent.ACTION_SCREEN_OFF); addAction(Intent.ACTION_SCREEN_ON) }
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(screenReceiver, sf, RECEIVER_EXPORTED) else registerReceiver(screenReceiver, sf)
+    }
+
+    // ---- Background apps: stop on screen off ----
+    private val stopListedRunnable = Runnable {
+        netExec.execute { runCatching { AppControl.stopListed(this) } }
+    }
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            netHandler.removeCallbacks(stopListedRunnable)
+            if (i.action == Intent.ACTION_SCREEN_OFF &&
+                !Prefs.getFlag(c, Prefs.BG_SCREEN_OFF_OFF) &&
+                Prefs.noBackgroundPkgs(c).isNotEmpty()
+            ) netHandler.postDelayed(stopListedRunnable, 10_000) // screen back on within 10 s cancels it
+        }
     }
 
     // ---- Smart DNS network watcher ----
@@ -351,6 +372,8 @@ class GuardService : Service() {
         runCatching { unregisterReceiver(receiver) }
         runCatching { contentResolver.unregisterContentObserver(dnsObserver) }
         runCatching { connectivity.unregisterNetworkCallback(netCallback) }
+        runCatching { unregisterReceiver(screenReceiver) }
+        netHandler.removeCallbacks(stopListedRunnable)
         netExec.shutdownNow()
         super.onDestroy()
     }
