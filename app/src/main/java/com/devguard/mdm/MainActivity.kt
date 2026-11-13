@@ -153,7 +153,8 @@ class MainActivity : AppCompatActivity() {
 
         val activeRestrictions = RESTRICTION_GROUPS.flatMap { it.second }.count { m.hasRestriction(it.key) }
         val dnsOn = PrivateDns.currentHost(this) != null
-        val webOn = dnsOn || Prefs.webBlock(this) || Prefs.getFlag(this, Prefs.CHROME_ON)
+        // "On" only when a DNS-level filter protects all browsers/apps (Chrome rules alone don't count).
+        val webOn = WebFilter.anyFilterActive(this) || dnsOn
         val playState = when {
             m.isHidden(Mdm.PLAY_STORE) -> "Hidden"
             m.isSuspended(Mdm.PLAY_STORE) -> "Suspended"
@@ -188,7 +189,7 @@ class MainActivity : AppCompatActivity() {
                 Tile("Apps", R.drawable.ic_apps, Palette.BLUE, if (Prefs.approvalMode(context)) "Approval on" else "Control apps") {
                     open(AppsActivity::class.java)
                 },
-                Tile("Websites", R.drawable.ic_web, Palette.GREEN, if (webOn) "Filtering" else "Off") {
+                Tile("Websites", R.drawable.ic_web, if (webOn) Palette.GREEN else Palette.RED, if (webOn) "Filtering" else "⚠ No filter") {
                     open(WebActivity::class.java)
                 },
                 Tile("Restrictions", R.drawable.ic_tune, Palette.PURPLE, "$activeRestrictions active") {
@@ -235,16 +236,20 @@ class MainActivity : AppCompatActivity() {
     private fun dangerZone(m: Mdm) {
         MaterialAlertDialogBuilder(this).setTitle("Danger zone")
             .setItems(arrayOf("Remove Device Owner (release all controls)", "Factory reset this phone")) { _, i ->
-                if (i == 0) {
-                    if (!m.isOwner) { toast("Not Device Owner"); return@setItems }
-                    confirm(
-                        "Release all controls?",
-                        "All restrictions, hidden/paused apps, website blocking and kiosk mode are removed, " +
-                            "and this app stops being Device Owner. You'd need to factory reset to make it owner again.",
-                        "Release",
-                    ) { act { m.releaseAll(this); toast("Device Owner removed"); render() } }
-                } else wipe(m)
+                dangerAction(m, i)
             }.show()
+    }
+
+    private fun dangerAction(m: Mdm, i: Int) {
+        if (i == 0) {
+            if (!m.isOwner) { toast("Not Device Owner"); return }
+            confirm(
+                "Release all controls?",
+                "All restrictions, hidden/paused apps, website blocking and kiosk mode are removed, " +
+                    "and this app stops being Device Owner. You'd need to factory reset to make it owner again.",
+                "Release",
+            ) { act { m.releaseAll(this); toast("Device Owner removed"); render() } }
+        } else wipe(m)
     }
 
     private fun changePin() {

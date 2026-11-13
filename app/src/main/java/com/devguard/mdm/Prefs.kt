@@ -69,6 +69,15 @@ object Prefs {
     fun setDomains(c: Context, v: Set<String>) = putSet(c, "domains", v)
     fun webBlock(c: Context) = flag(c, "webBlock")
     fun setWebBlock(c: Context, v: Boolean) = putFlag(c, "webBlock", v)
+    // ---- Filter guard (self-control lock) ----
+    const val GUARD_ON = "guardOn"
+    const val GUARD_DELAY = "guardDelayMin"
+    const val GUARD_WAIT_START = "guardWaitStart"
+    fun getInt(c: Context, k: String, def: Int) = p(c).getInt(k, def)
+    fun setInt(c: Context, k: String, v: Int) = p(c).edit().putInt(k, v).commit()
+    fun getLong(c: Context, k: String) = p(c).getLong(k, 0L)
+    fun setLong(c: Context, k: String, v: Long) = p(c).edit().putLong(k, v).commit()
+
     // ---- Smart DNS (office-network backup) ----
     const val SMART_DNS_OFF = "smartDnsOff"      // default ON (flag is "off")
     const val DNS_FALLBACK = "dnsFallback"       // true while the backup VPN filter is in use

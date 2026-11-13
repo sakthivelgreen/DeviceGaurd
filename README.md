@@ -382,6 +382,27 @@ For an extra layer, use the Play Store's own **parental controls** (Play Store �
 
 **Recommended:** Cloudflare Family + Chrome rules + hide other browsers + Approved apps only.
 
+**Filter guard (self-control lock).** Websites → **Filter guard** (top card). When it's on, anything that **weakens website filtering** needs a challenge. Turning protections **on** is always instant.
+1. **Typing puzzle:** retype a random 40-character code. Pasting is blocked, and any mistake gives a new code.
+2. **Maths:** a 2-digit × 2-digit multiplication.
+3. **Cooling-off wait:** none, 15 (default), 30 or 60 minutes. After solving, wait, then repeat the same action **within 10 minutes** to confirm, or the request expires. The wait uses the time since boot, so changing the clock doesn't skip it and a reboot restarts it.
+
+Guarded actions (Websites screen only): filter → Off, a weaker filter (Cloudflare Security) or Custom; turning off automatic backup, any Chrome rule, Allow only Chrome, the incognito block, the VPN filter or its family-safe upstream; replacing Private DNS with the VPN filter; unblocking a site; adding an office domain; shortening the wait; turning the guard off. Switching between the family filters (Cloudflare Family ↔ AdGuard Family) is free. Restrictions, Blocked apps and the Danger zone are **not** guarded. A PIN reset doesn't turn the guard off.
+
+**Which layer blocks what.** The DNS filter (Private DNS, its office backup, or the VPN filter) is the **main protection**. Chrome rules are an extra layer.
+
+| Blocked | DNS filter ON | DNS filter OFF |
+|---|---|---|
+| Your site list in Chrome | ✅ | ✅ (Chrome rules) |
+| Adult sites in Chrome | ✅ | ✅ (SafeSites, less complete) |
+| Adult sites in other browsers and in-app browsers | ✅ | ❌ |
+| Adult sites in incognito | ✅ (incognito can't bypass DNS) | Chrome incognito off only |
+| Private Space | ✅ (normal networks) | ❌ |
+
+When no DNS filter is active, the dashboard **Websites** tile turns red ("⚠ No filter") and the Websites screen shows a warning.
+
+**Incognito in other browsers:** only Chrome accepts a policy to disable private browsing on Android, so **Disable incognito / private browsing** also turns on **Allow only Chrome** (other browsers hidden, new ones hidden on install).
+
 **Office network backup (Smart DNS).** Some networks, often office Wi-Fi, block the filter's secure DNS port **853**. With a strict Private DNS filter the internet then stops working. DeviceGuard fixes this automatically (Websites → **Office network backup**, on by default):
 
 | Situation | What happens | Internet gap |
@@ -495,6 +516,7 @@ MDM_App/
             ├── Services.kt              DnsVpnService (DNS filter), GuardService (install watcher), BootReceiver
             ├── Prefs.kt                 SharedPreferences store, PIN + recovery-code hashing, Session (timeout/lockout)
             ├── PinResetReceiver.kt      ADB-only forgotten-PIN reset (protected by DUMP permission)
+            ├── Guard.kt                 Filter guard: puzzle, maths, cooling-off wait (`Guard.require`)
             └── Ui.kt                    UI kit: pages, cards, tiles, tabs, switches, dialogs, palette
 ```
 
@@ -699,5 +721,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-10 | Private DNS lock that really works on vivo: one-time `WRITE_SECURE_SETTINGS` grant; the app writes Private DNS itself (works with Private Space) and auto-reverts edits. New **Allow only Chrome** switch: hides other browsers now and on install. |
 | 2026-11-10 | Fix: auto-revert couldn't write while the lock restriction was on (writes were silently dropped). The app now lifts the lock, writes, checks and re-locks. Checked on the phone: Private DNS `family.adguard-dns.com`, validated, lock re-applied. |
 | 2026-11-10 | **Office network backup (Smart DNS):** network watcher, port-853 test on connect, remembered blocking networks, backup VPN filter over DoH, office domains (split DNS), status card. **PIN recovery:** one-time recovery code, "Forgot PIN?" on the lock screen, ADB reset receiver, dashboard reminder, PIN & recovery tile. |
+| 2026-11-13 | Fix: switching to the VPN filter cleared the Private DNS filter before the VPN started, so a cancelled or stopped VPN left **no filter at all**. Now the Private DNS filter is only replaced after the VPN really starts. "No website filter is active" warning (dashboard tile turns red). Disable incognito also turns on Allow only Chrome (incognito can't be disabled in other browsers). |
+| 2026-11-13 | **Filter guard:** typing puzzle (no paste) + maths + optional cooling-off wait before weakening any website filter (Websites screen only). Code in `Guard.kt`. |
 
 © Sakthivel J

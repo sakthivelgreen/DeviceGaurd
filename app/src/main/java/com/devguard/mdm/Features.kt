@@ -21,27 +21,35 @@ object WebFilter {
     const val VPN_CONSENT_REQUEST = 77
 
     /** Returns true if blocking is running now; false if waiting for VPN consent. */
+    /**
+     * Starts the VPN filter. Nothing else changes until the VPN can really start:
+     * if VPN permission is needed, [finishEnable] runs only after the user allows it,
+     * so a cancelled prompt never leaves the phone with no filter at all.
+     */
     fun enable(a: Activity): Boolean {
-        // The manual VPN filter replaces the Private DNS filter (they can't run together).
+        val m = Mdm(a)
+        // As Device Owner, always-on also grants VPN permission (no prompt).
+        if (m.isOwner) runCatching { m.dpm.setAlwaysOnVpnPackage(m.admin, a.packageName, false) }
+            .onFailure { a.toast("Always-on VPN failed: ${it.message}") }
+        if (VpnService.prepare(a) != null) {
+            a.startActivityForResult(VpnService.prepare(a), VPN_CONSENT_REQUEST)
+            return false
+        }
+        finishEnable(a)
+        return true
+    }
+
+    /** Second half of [enable], once VPN permission exists. Replaces the Private DNS filter (they can't run together). */
+    fun finishEnable(a: Activity) {
         if (Prefs.privateDnsHost(a) != null) runCatching { PrivateDns.apply(a, null) }
         Prefs.setWebBlock(a, true)
         DnsVpnService.reload(a)
-        val m = Mdm(a)
-        if (m.isOwner) {
-            // Always-on: the system keeps the VPN running and the user cannot switch it off.
-            runCatching { m.dpm.setAlwaysOnVpnPackage(m.admin, a.packageName, false) }
-                .onFailure { a.toast("Always-on VPN failed: ${it.message}") }
-            // Stop user-chosen Private DNS (DNS-over-TLS) from bypassing the filter.
-            runCatching { m.dpm.setGlobalPrivateDnsModeOpportunistic(m.admin) }
-        }
-        val consent = VpnService.prepare(a)
-        if (consent != null) {
-            a.startActivityForResult(consent, VPN_CONSENT_REQUEST)
-            return false
-        }
         a.startService(Intent(a, DnsVpnService::class.java))
-        return true
     }
+
+    /** True if a DNS-level filter (Private DNS, its office backup, or the VPN filter) is protecting the phone. */
+    fun anyFilterActive(c: Context) =
+        Prefs.webBlock(c) || SmartDns.fallbackActive(c) || Prefs.privateDnsHost(c) != null || PrivateDns.currentHost(c) != null
 
     fun disable(c: Context) {
         Prefs.setWebBlock(c, false)

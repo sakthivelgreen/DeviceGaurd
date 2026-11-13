@@ -9,6 +9,12 @@ class RestrictionsActivity : BaseActivity() {
         if (!isFinishing) render()
     }
 
+    /** Applies a switch change. (The filter guard is only for website filters, not restrictions.) */
+    @Suppress("UNUSED_PARAMETER")
+    private fun guardOff(what: String, on: Boolean, apply: () -> Unit): Boolean {
+        act(apply); render(); return true
+    }
+
     private fun render() {
         val m = Mdm(this)
         val owner = m.isOwner
@@ -18,10 +24,10 @@ class RestrictionsActivity : BaseActivity() {
 
             card("Hardware & privacy") {
                 switchRow("Disable camera", null, owner && m.dpm.getCameraDisabled(m.admin), owner) { _, on ->
-                    m.dpm.setCameraDisabled(m.admin, on); true
+                    guardOff("turn the camera back on", on) { m.dpm.setCameraDisabled(m.admin, on) }
                 }
                 switchRow("Block screenshots & screen recording", null, owner && m.dpm.getScreenCaptureDisabled(m.admin), owner) { _, on ->
-                    m.dpm.setScreenCaptureDisabled(m.admin, on); true
+                    guardOff("allow screenshots", on) { m.dpm.setScreenCaptureDisabled(m.admin, on) }
                 }
             }
 
@@ -35,7 +41,7 @@ class RestrictionsActivity : BaseActivity() {
                                 }
                                 false
                             } else {
-                                m.setRestriction(r.key, on); true
+                                guardOff("turn off \"${r.title}\"", on) { m.setRestriction(r.key, on) }
                             }
                         }
                     }

@@ -24,8 +24,14 @@ class WebActivity : BaseActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == WebFilter.VPN_CONSENT_REQUEST) {
-            if (resultCode == Activity.RESULT_OK) startService(Intent(this, DnsVpnService::class.java))
-            else { Prefs.setWebBlock(this, false); toast("VPN permission is needed for the VPN filter") }
+            if (resultCode == Activity.RESULT_OK) WebFilter.finishEnable(this)
+            else {
+                // Cancelled: undo the always-on setting, keep the current filter as it was.
+                val m = Mdm(this)
+                if (m.isOwner && !Prefs.webBlock(this)) runCatching { m.dpm.setAlwaysOnVpnPackage(m.admin, null, false) }
+                toast("VPN filter not started. Your current filter is unchanged.")
+            }
+            render()
         }
     }
 
@@ -59,11 +65,25 @@ class WebActivity : BaseActivity() {
         render()
     }
 
+    /** Switch helper: turning ON (stronger) applies directly; turning OFF (weaker) needs the filter guard. */
+    private fun guardOff(what: String, on: Boolean, apply: () -> Unit): Boolean {
+        if (on) { apply(); render(); return true }
+        Guard.require(this, what) { apply(); render() }
+        return false
+    }
+
+    private val FAMILY_HOSTS = setOf("family.cloudflare-dns.com", "family.adguard-dns.com")
+
     private fun choosePrivateDns() {
         val items = PrivateDns.PROVIDERS.map { "${it.name}: ${it.desc}" } + "Custom (NextDNS, etc.)"
         MaterialAlertDialogBuilder(this).setTitle("Family-safe filter")
             .setItems(items.toTypedArray()) { _, i ->
-                if (i < PrivateDns.PROVIDERS.size) setPrivateDns(PrivateDns.PROVIDERS[i].host) else customPrivateDns()
+                if (i < PrivateDns.PROVIDERS.size) {
+                    val h = PrivateDns.PROVIDERS[i].host
+                    // Switching between family filters is free; Off or a weaker filter needs the guard.
+                    if (h in FAMILY_HOSTS) setPrivateDns(h)
+                    else Guard.require(this, if (h == null) "turn off the website filter" else "switch to a weaker filter") { setPrivateDns(h) }
+                } else Guard.require(this, "use a custom DNS") { customPrivateDns() }
             }.show()
     }
 
@@ -85,9 +105,10 @@ class WebActivity : BaseActivity() {
 
     private fun chromeSwitch(c: android.widget.LinearLayout, title: String, sub: String, key: String, enabled: Boolean) {
         c.switchRow(title, sub, Prefs.getFlag(this, key), enabled) { _, on ->
-            Prefs.setFlag(this, key, on)
-            ChromePolicy.apply(this)?.let { toast(it) }
-            true
+            guardOff("turn off \"$title\"", on) {
+                Prefs.setFlag(this, key, on)
+                ChromePolicy.apply(this)?.let { toast(it) }
+            }
         }
     }
 
@@ -116,6 +137,35 @@ class WebActivity : BaseActivity() {
         val provider = PrivateDns.PROVIDERS.firstOrNull { it.host != null && it.host == host }
         scrollPage("Websites", back = true, subtitle = "${Prefs.domains(this).size} sites blocked") {
             if (!owner) card { text("⚠️ Device Owner required for most of these controls", 13f, bold = true, color = Palette.ORANGE) }
+
+            // ---- Filter guard (self-control lock) ----
+            card("Filter guard") {
+                text(
+                    "Makes it hard to weaken filtering on impulse. Turning anything off needs a typing puzzle and a maths question, " +
+                        "then a cooling-off wait before you can confirm. Turning protections ON is always instant.",
+                    13f,
+                ).alpha = 0.8f
+                switchRow("Filter guard", if (Guard.enabled(context)) "On" else "Off", Guard.enabled(context), owner) { _, on ->
+                    guardOff("turn off the filter guard", on) { Prefs.setFlag(this@WebActivity, Prefs.GUARD_ON, on) }
+                }
+                if (Guard.enabled(context)) {
+                    val d = Guard.delayMin(context)
+                    text("Cooling-off wait: " + if (d == 0) "none (puzzle only)" else "$d minutes", 14f, bold = true)
+                    button("Change wait time", outlined = true) {
+                        val opts = Guard.DELAYS
+                        MaterialAlertDialogBuilder(this@WebActivity).setTitle("Cooling-off wait")
+                            .setItems(opts.map { if (it == 0) "None (puzzle only)" else "$it minutes" }.toTypedArray()) { _, i ->
+                                val v = opts[i]
+                                val set = { Prefs.setInt(this@WebActivity, Prefs.GUARD_DELAY, v); render() }
+                                if (v >= d) set() else Guard.require(this@WebActivity, "shorten the wait time") { set() }
+                            }.show()
+                    }
+                }
+            }
+            if (owner && !WebFilter.anyFilterActive(context)) card {
+                text("⚠️ No website filter is active", 16f, bold = true, color = Palette.RED)
+                text("Sites are only blocked inside Chrome right now. Tap Choose filter below (e.g. AdGuard Family) to protect every browser and app.", 13f)
+            }
 
             // ---- 1. Family-safe (Private DNS) ----
             card("Family-safe filter · no VPN") {
@@ -161,7 +211,7 @@ class WebActivity : BaseActivity() {
                     "Automatic backup",
                     if (PrivateDns.canWrite(context)) "Recommended" else "Needs the one-time setup command above",
                     SmartDns.autoOn(context), owner && PrivateDns.canWrite(context),
-                ) { _, on -> SmartDns.setAuto(this@WebActivity, on); render(); true }
+                ) { _, on -> guardOff("turn off the automatic backup", on) { SmartDns.setAuto(this@WebActivity, on) } }
                 text(
                     if (SmartDns.fallbackActive(context)) "🛡️ Now: backup filter (this network blocks secure DNS)"
                     else "✅ Now: normal Private DNS filter",
@@ -181,7 +231,8 @@ class WebActivity : BaseActivity() {
                 button("Add office domain", outlined = true) {
                     val d = WebFilter.normalize(od.text.toString())
                         ?: od.text.toString().trim().lowercase().takeIf { Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)*$").matches(it) }
-                    if (d == null) toast("Enter a domain like corp.local") else {
+                    // Office domains skip the family filter, so adding one needs the guard.
+                    if (d == null) toast("Enter a domain like corp.local") else Guard.require(this@WebActivity, "let $d skip the filter") {
                         Prefs.setOfficeDomains(this@WebActivity, Prefs.officeDomains(this@WebActivity) + d)
                         DnsVpnService.reload(this@WebActivity); render()
                     }
@@ -228,10 +279,12 @@ class WebActivity : BaseActivity() {
             if (domains.isEmpty()) text("No sites blocked yet.", 13f).alpha = 0.6f
             domains.forEach { d ->
                 text("🚫  $d", 16f).setOnClickListener {
-                    confirm("Unblock $d?", "This site will be reachable again.", "Unblock") {
-                        Prefs.setDomains(this@WebActivity, Prefs.domains(this@WebActivity) - d)
-                        onDomainsChanged(this@WebActivity)
-                        render()
+                    Guard.require(this@WebActivity, "unblock $d") {
+                        confirm("Unblock $d?", "This site will be reachable again.", "Unblock") {
+                            Prefs.setDomains(this@WebActivity, Prefs.domains(this@WebActivity) - d)
+                            onDomainsChanged(this@WebActivity)
+                            render()
+                        }
                     }
                 }
             }
@@ -244,23 +297,38 @@ class WebActivity : BaseActivity() {
             text("Enforced inside Chrome through its enterprise policies. Restart Chrome after changes; check them at chrome://policy.", 13f).alpha = 0.8f
             val chromeOn = Prefs.getFlag(context, Prefs.CHROME_ON)
             switchRow("Enforce in Chrome", "Blocks your site list in Chrome", chromeOn, owner) { _, on ->
-                Prefs.setFlag(this@WebActivity, Prefs.CHROME_ON, on)
-                ChromePolicy.apply(this@WebActivity)?.let { toast(it) }
-                render(); true
+                guardOff("turn off the Chrome rules", on) {
+                    Prefs.setFlag(this@WebActivity, Prefs.CHROME_ON, on)
+                    ChromePolicy.apply(this@WebActivity)?.let { toast(it) }
+                }
             }
             val sub = owner && chromeOn
             chromeSwitch(this, "Adult site filter", "Google SafeSites", Prefs.CHROME_SAFESITES, sub)
             chromeSwitch(this, "Force Google SafeSearch", "Explicit results hidden in Google Search", Prefs.CHROME_SAFESEARCH, sub)
             chromeSwitch(this, "YouTube restricted mode", "Moderate restricted mode on youtube.com", Prefs.CHROME_YOUTUBE, sub)
-            chromeSwitch(this, "Disable incognito tabs", "Users can't browse privately", Prefs.CHROME_NO_INCOGNITO, sub)
+            switchRow(
+                "Disable incognito / private browsing",
+                "Other browsers can't have private mode turned off, so this also turns on Allow only Chrome below",
+                Prefs.getFlag(context, Prefs.CHROME_NO_INCOGNITO), sub,
+            ) { _, on ->
+                guardOff("allow incognito browsing", on) {
+                    Prefs.setFlag(this@WebActivity, Prefs.CHROME_NO_INCOGNITO, on)
+                    ChromePolicy.apply(this@WebActivity)?.let { toast(it) }
+                    if (on && !Prefs.getFlag(this@WebActivity, Prefs.CHROME_ONLY)) {
+                        val n = ChromePolicy.setChromeOnly(this@WebActivity, true)
+                        toast("Incognito off. Only Chrome allowed now ($n other browser(s) hidden)")
+                    }
+                }
+            }
             switchRow(
                 "Allow only Chrome",
                 "Hides every other browser now and any browser installed later, so Chrome's rules can't be avoided",
                 Prefs.getFlag(context, Prefs.CHROME_ONLY), owner,
             ) { _, on ->
-                val n = ChromePolicy.setChromeOnly(this@WebActivity, on)
-                toast(if (on) "Only Chrome allowed ($n other browser(s) hidden)" else "Other browsers allowed again ($n restored)")
-                render(); true
+                guardOff("allow other browsers", on) {
+                    val n = ChromePolicy.setChromeOnly(this@WebActivity, on)
+                    toast(if (on) "Only Chrome allowed ($n other browser(s) hidden)" else "Other browsers allowed again ($n restored)")
+                }
             }
             text(
                 "Chrome rules don't reach browsers inside Private Space or the built-in browsers of apps like Instagram. " +
@@ -281,11 +349,12 @@ class WebActivity : BaseActivity() {
                 "VPN filter",
                 if (owner) "Always-on: the user can't turn it off" else "Not Device Owner: the user can turn this off",
                 Prefs.webBlock(context),
-            ) { sw, on ->
-                if (!on) { WebFilter.disable(context); render(); true }
+            ) { _, on ->
+                if (!on) guardOff("turn off the VPN filter", false) { WebFilter.disable(this@WebActivity) }
                 else if (host != null) {
-                    confirm("Turn off Private DNS filter?", "The VPN filter replaces the family-safe Private DNS filter ($host).", "Switch") {
-                        act { if (WebFilter.enable(this@WebActivity)) sw.setSilently(true); render() }
+                    // Replaces the Private DNS filter (which also covers Private Space), so it needs the guard.
+                    Guard.require(this@WebActivity, "replace the Private DNS filter with the VPN filter") {
+                        act { WebFilter.enable(this@WebActivity) }; render()
                     }
                     false
                 } else WebFilter.enable(this@WebActivity)
@@ -294,7 +363,7 @@ class WebActivity : BaseActivity() {
                 "Family-safe upstream for VPN",
                 "VPN filter also blocks adult and malware sites (Cloudflare 1.1.1.3)",
                 Prefs.familyDns(context),
-            ) { _, on -> Prefs.setFamilyDns(context, on); DnsVpnService.reload(context); true }
+            ) { _, on -> guardOff("turn off family-safe DNS for the VPN", on) { Prefs.setFamilyDns(this@WebActivity, on); DnsVpnService.reload(this@WebActivity) } }
             }
 
             text("Tip: browsers cache lookups. If a newly blocked site still opens, close and reopen the browser.", 12f).alpha = 0.6f
