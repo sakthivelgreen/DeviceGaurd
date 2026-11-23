@@ -97,7 +97,7 @@ cd D:\TV_CLEANUP\MDM_App; .\gradlew.bat assembleDebug
 & $adb shell dpm list-owners                          # should still show DeviceOwner
 ```
 - Turn off **Block all installs** in the app first if it's on.
-- The new APK must be signed with the **same key** (the PC's `%USERPROFILE%\.android\debug.keystore`). Back that file up (§10.9).
+- The new APK must be signed with the **same key**: `D:\keys\deviceguard.keystore` via `keystore.properties` (§10.9). Keep both backed up.
 
 ### E. Remove Device Owner (keep the app installed)
 Pick one:
@@ -292,7 +292,7 @@ cd D:\TV_CLEANUP\MDM_App\tools
 $env:GITHUB_TOKEN = "github_pat_..."             # Contents: Read and write on the repo
 .\release.ps1 -Upload -Notes "What's new"        # creates release build-<versionCode> with DeviceGuard.apk
 ```
-Debug and release builds are signed with the **same key** (the PC's debug keystore by default; your own key via a git-ignored `keystore.properties`), so either can update the other. Keep installing the **debug** build on the phone while developing: only it has the `testOnly` ADB escape hatch.
+Debug and release builds are signed with the **same key** (`D:\keys\deviceguard.keystore`, described by the git-ignored `keystore.properties`, §10.9), so either can update the other. Keep installing the **debug** build on the phone while developing: only it has the `testOnly` ADB escape hatch.
 
 ---
 
@@ -721,13 +721,23 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 
 ### 10.9 Version bump and release build
 1. In `app/build.gradle.kts`, increase `versionCode` (it must go up for every update) and `versionName`.
-2. **Release signing (once):**
+2. **Signing key (already set up, 2026-11-23).** Every build (debug and release) is signed with ONE key:
+
+   | File | Where | In git? |
+   |---|---|---|
+   | `deviceguard.keystore` (PKCS12, alias `androiddebugkey`) | `D:\keys\` | ❌ never |
+   | `keystore.properties` (path + password) | `MDM_App\` root | ❌ git-ignored |
+
+   Certificate SHA-256: `E8:92:FC:E3:C9:4D:1E:D0:2A:39:25:2A:E6:8D:EE:17:EF:2D:59:31:FE:38:22:53:4A:90:FE:4A:88:4C:DE:E2`. That's the key of the app installed on the phone, originally the PC's debug key, now with its own strong password. `app/build.gradle.kts` reads `keystore.properties`; without it, builds fall back to `%USERPROFILE%\.android\debug.keystore` (same key, password `android`).
+
+   ⚠️ **Never generate a new key for this app.** Android only installs updates signed with the same key. A different key means uninstalling, releasing Device Owner, and setting it up again (no accounts on the phone, in practice a factory reset). **Keep both files backed up together** in at least two places off this PC.
+
+   **Restore on a new PC:** copy `deviceguard.keystore` to `D:\keys\` (or anywhere, then fix `storeFile`), copy `keystore.properties` to the `MDM_App` root, build, then check:
    ```powershell
-   keytool -genkeypair -v -keystore D:\TV_CLEANUP\keys\deviceguard.jks -alias deviceguard -keyalg RSA -keysize 2048 -validity 10000
+   & "D:\TV_CLEANUP\android-sdk\build-tools\36.0.0\apksigner.bat" verify --print-certs app\build\outputs\apk\release\app-release.apk
    ```
-   Add a `signingConfigs { create("release") { … } }` block in `app/build.gradle.kts`, then run `.\gradlew.bat assembleRelease`.
-   ⚠️ **Updates must be signed with the same key** as the installed app. The phone currently has the **debug-signed** build (`%USERPROFILE%\.android\debug.keystore`). Switching to a release key means uninstalling, which requires releasing Device Owner first and then a factory reset to provision again. **Back up `debug.keystore`**; losing it means you can't update the installed app.
-3. `testOnly="true"` stays on for the ADB escape hatch (§8). Remove it only if you accept that recovery then needs the PIN or a factory reset.
+   The SHA-256 must start with `e892fce3`. If an install fails with `INSTALL_FAILED_UPDATE_INCOMPATIBLE`, you're using the wrong key: stop, don't uninstall the app on the phone.
+3. `testOnly="true"` stays on for debug builds (ADB escape hatch, §8). Release builds have it off.
 
 ### 10.10 Test checklist after a change
 - [ ] `.\gradlew.bat assembleDebug` succeeds
@@ -782,7 +792,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 |---|---|
 | `adb: more than one device/emulator` | `adb devices`, then `adb -s <serial> …` |
 | `INSTALL_FAILED_TEST_ONLY` | Use `adb install -t`. |
-| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Different signing key. Build with the same `debug.keystore` (§10.9). |
+| `INSTALL_FAILED_UPDATE_INCOMPATIBLE` | Different signing key. Restore `deviceguard.keystore` + `keystore.properties` from your backup (§10.9). Don't uninstall the app. |
 | Install blocked | Turn off **Block all installs** in the app. |
 | Choose filter → "unaffiliated users" | Private Space / App Clone exists. Keep it and set Private DNS from the PC (§7 Websites), or use the VPN filter. |
 | Blocked site still opens | Close and reopen the browser (DNS cache). Check Websites → filter "Current". |
@@ -827,5 +837,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-23 | Fix: leaving NextDNS failed with "didn't respond as a DNS-over-TLS server". NextDNS *Block bypass methods* blocks the names of other DNS services, so Android's pre-check failed. Built-in filters are now tested by their fixed IPs and written directly. |
 | 2026-11-23 | **Auto-fallback on any failure:** if the filter's DNS stops responding on the current network (detected when Android marks the connection not validated), Private DNS switches to Automatic within seconds. On mobile data it's re-checked every 3 minutes and on screen on, and the filter returns as soon as it connects. |
 | 2026-11-23 | **Lock screen & branding** (Settings): organization name, lock screen message and support messages, default "Sakthivel J" (`Branding.kt`, applied from `ensureBaseline`). |
+| 2026-11-23 | **Signing key:** the app's key moved to `D:\keys\deviceguard.keystore` with a strong password (same key, fingerprint `E8:92:FC:E3…`). `keystore.properties` (git-ignored) points to it; debug and release builds both use it. README §10.9 rewritten (the old advice to generate a new key would have broken updates).
 
 © Sakthivel J

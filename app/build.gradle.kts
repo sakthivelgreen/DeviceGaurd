@@ -6,12 +6,15 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// Release signing. Defaults to the debug keystore so release builds have the SAME signature as the
-// installed app (updates keep working). To use your own key, create keystore.properties (git-ignored):
-//   storeFile=D:/keys/deviceguard.jks
+// Signing. The app's key lives in a keystore OUTSIDE the repo, described by keystore.properties (git-ignored):
+//   storeFile=D:/keys/deviceguard.keystore
 //   storePassword=...
-//   keyAlias=...
+//   keyAlias=androiddebugkey
 //   keyPassword=...
+// When it exists, BOTH debug and release builds use it, so every build has the same signature as the
+// installed app (fingerprint SHA-256 E8:92:FC:E3:…:4C:DE:E2). Without it, builds fall back to the PC's
+// default debug keystore (~/.android/debug.keystore). Back up the keystore + keystore.properties: a lost
+// key means the installed Device Owner app can never be updated again.
 val keystoreProps = Properties().apply {
     val f = rootProject.file("keystore.properties")
     if (f.exists()) f.inputStream().use { load(it) }
@@ -49,6 +52,8 @@ android {
 
     buildTypes {
         debug {
+            // Same key as release when keystore.properties exists (one key file to back up).
+            if (keystoreProps.getProperty("storeFile") != null) signingConfig = signingConfigs.getByName("release")
             // testOnly = ADB escape hatch (dpm remove-active-admin). Debug builds keep it.
             manifestPlaceholders["testOnly"] = "true"
         }
