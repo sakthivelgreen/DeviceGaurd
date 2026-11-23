@@ -40,19 +40,12 @@ class DnsVpnService : VpnService() {
         fun reload(c: Context) {
             blocked = (Prefs.domains(c) + Prefs.stSites(c)).map { it.lowercase() }.toSet()
             office = Prefs.officeDomains(c).map { it.lowercase() }.toSet()
-            val host = Prefs.privateDnsHost(c)
-            if (SmartDns.fallbackActive(c) && host != null) {
-                // Backup mode: same filter as Private DNS, but over HTTPS (port 443) which offices rarely block.
-                dohUrl = SmartDns.dohUrl(host)
-                upstreams = SmartDns.plainBackup(host)
-            } else {
-                dohUrl = null
-                upstreams = if (Prefs.familyDns(c)) listOf("1.1.1.3", "1.0.0.3") else listOf("1.1.1.1", "8.8.8.8")
-            }
+            dohUrl = null
+            upstreams = if (Prefs.familyDns(c)) listOf("1.1.1.3", "1.0.0.3") else listOf("1.1.1.1", "8.8.8.8")
         }
 
-        /** True if the VPN should be running (manual VPN filter, or Smart DNS backup mode). */
-        fun shouldRun(c: Context) = Prefs.webBlock(c) || SmartDns.fallbackActive(c)
+        /** True if the VPN should be running (manual VPN filter only; Smart DNS backup no longer uses it). */
+        fun shouldRun(c: Context) = Prefs.webBlock(c)
 
         private fun matches(name: String, set: Set<String>): Boolean {
             var n = name.lowercase().trimEnd('.')
@@ -299,6 +292,7 @@ class GuardService : Service() {
         for (key in listOf("private_dns_mode", "private_dns_specifier")) {
             contentResolver.registerContentObserver(android.provider.Settings.Global.getUriFor(key), false, dnsObserver)
         }
+        SmartDns.cleanup(this) // stop a backup VPN left by an older version
         PrivateDns.enforce(this)
 
         // Smart DNS: check every network the moment it connects or changes.

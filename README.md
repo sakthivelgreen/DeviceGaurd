@@ -178,7 +178,7 @@ Security: the ADB reset only accepts the ADB shell (the receiver requires the `D
 | **Website blocking** | (1) **Family-safe filter, no VPN**: forced and locked Private DNS (Cloudflare Family / Security, AdGuard Family, or custom such as NextDNS). (2) **Chrome rules, no VPN**: your blocked-site list, adult filter, SafeSearch, YouTube restricted mode, no incognito, and hide other browsers. (3) **Optional VPN DNS filter**: your list in every app. |
 | **Device restrictions** | Camera, screenshots, factory reset, safe mode, add users, accounts, app settings, developer options/ADB, installs/uninstalls, sideloading, Wi-Fi, mobile network, hotspot, Bluetooth, VPN, Private DNS, USB file transfer, SD card, date/time, location, calls, SMS. |
 | **Bloatware** | Every built-in app rated **Safe / Caution / Keep / Unknown** in 2×2 tabs. **Per-app on/off switch**, restore, and copyable ADB "remove completely" command. PC script `tools\debloat.ps1` for bulk list/disable/remove/restore with an undo log. |
-| **Background apps** | **Force stop** any app (Apps → app → Actions…, or Background apps → tap). **No background running** per app: listed apps are force-stopped ~10 s after the screen turns off. Optional Android **Restricted** mode over ADB (`toolsackground.ps1`). |
+| **Background apps** | **Force stop** any app (Apps → app → Actions…, or Background apps → tap). **No background running** per app: listed apps are force-stopped ~10 s after the screen turns off. Optional Android **Restricted** mode over ADB (`tools\background.ps1`). |
 | **Screen time** | **Daily app limits** (app paused until midnight), **schedules** (block apps and websites at set times, e.g. study or bedtime), **temporary unlock** (+15/30/60 min), **usage dashboard** (today + last 7 days). Needs one-time Usage access. |
 | **Two-factor unlock** | PIN + 6-digit code from Zoho OneAuth or Google Authenticator (TOTP, offline). |
 | **App permissions** | Per app and per permission group: let the user decide / always allow / always deny (location, camera, microphone, contacts, SMS…). |
@@ -408,9 +408,9 @@ For an extra layer, use the Play Store's own **parental controls** (Play Store �
 2. **Maths:** a 2-digit × 2-digit multiplication.
 3. **Cooling-off wait:** none, 15 (default), 30 or 60 minutes. After solving, wait, then repeat the same action **within 10 minutes** to confirm, or the request expires. The wait uses the time since boot, so changing the clock doesn't skip it and a reboot restarts it.
 
-Guarded actions (Websites screen only): filter → Off, a weaker filter (Cloudflare Security) or Custom; turning off automatic backup, any Chrome rule, Allow only Chrome, the incognito block, the VPN filter or its family-safe upstream; replacing Private DNS with the VPN filter; unblocking a site; adding an office domain; shortening the wait; turning the guard off. Switching between the family filters (Cloudflare Family ↔ AdGuard Family) is free. Restrictions, Blocked apps and the Danger zone are **not** guarded. A PIN reset doesn't turn the guard off.
+Guarded actions (Websites screen only): filter → Off, a weaker filter (Cloudflare Security) or Custom; turning off any Chrome rule, Allow only Chrome or the incognito block; unblocking a site; shortening the wait; turning the guard off. The **VPN filter** switches (on/off, family-safe upstream) and the **Switch to Automatic when blocked** switch are **not** guarded. Switching between the family filters (Cloudflare Family ↔ AdGuard Family) is free. Restrictions, Blocked apps and the Danger zone are **not** guarded. A PIN reset doesn't turn the guard off.
 
-**Which layer blocks what.** The DNS filter (Private DNS, its office backup, or the VPN filter) is the **main protection**. Chrome rules are an extra layer.
+**Which layer blocks what.** The DNS filter (Private DNS or the VPN filter) is the **main protection**. Chrome rules are an extra layer.
 
 | Blocked | DNS filter ON | DNS filter OFF |
 |---|---|---|
@@ -424,20 +424,18 @@ When no DNS filter is active, the dashboard **Websites** tile turns red ("⚠ No
 
 **Incognito in other browsers:** only Chrome accepts a policy to disable private browsing on Android, so **Disable incognito / private browsing** also turns on **Allow only Chrome** (other browsers hidden, new ones hidden on install).
 
-**Office network backup (Smart DNS).** Some networks, often office Wi-Fi, block the filter's secure DNS port **853**. With a strict Private DNS filter the internet then stops working. DeviceGuard fixes this automatically (Websites → **Office network backup**, on by default):
+**When the filter's DNS can't connect (Smart DNS).** Some networks, often office Wi-Fi, block the filter's secure DNS port **853**. With a strict Private DNS filter the internet then stops working. DeviceGuard switches **Private DNS to Automatic** on that network so the internet keeps working (Websites → **When the filter's DNS can't connect** → *Switch to Automatic when blocked*, on by default). **No VPN is used** (the old VPN backup made many apps fail to open, so it was removed on 2026-11-23).
 
 | Situation | What happens | Internet gap |
 |---|---|---|
 | Port 853 works (home, mobile data) | Normal Private DNS filter (whole phone, incl. Private Space) | none |
-| New network blocks 853 | Detected on connect (TLS test to the filter, 2–4 s) → **backup filter**: the app's VPN sends lookups to the **same filter over HTTPS (DoH, port 443)**, Private DNS set to automatic | ~2–4 s, once |
-| Same network again | Remembered → backup starts instantly, then re-checked in the background | ~0–2 s |
-| Back on a normal network | Private DNS filter restored, VPN stopped | none |
+| New network blocks 853 | Detected on connect (TLS test to the filter, 2–4 s) → Private DNS set to **Automatic** (no family filter on this network) | ~2–4 s, once |
+| Same network again | Remembered → switches instantly, then re-checked in the background | ~0–2 s |
+| Back on a normal network | Private DNS filter restored | none |
 
-- A notification "Backup web filter on" shows while backup mode is active.
-- **Office domains (intranet):** add names like `corp.local` or `intranet.company.com`. In backup mode they're resolved by the office DNS (split DNS), everything else by the family filter.
-- Your **blocked-site list also applies** in backup mode.
-- The lock stays on: in backup mode Private DNS is held at "automatic" (so it can't bypass the VPN), and changes are reverted.
-- **Limit:** in backup mode the filter covers the **main profile only, not Private Space** (Android VPNs are per user).
+- A notification "Private DNS on Automatic" shows while it's active; the Websites screen shows the filter as *paused* (orange).
+- On such a network only the **Chrome rules** still block (your site list, SafeSites, SafeSearch). The family DNS filter does not.
+- The lock stays on: while paused, Private DNS is held at Automatic and changes are reverted; elsewhere it's held at the filter.
 - Wi-Fi login pages (captive portals) are left alone until you've logged in.
 - **Forget remembered networks** button: clears the list of networks known to block 853.
 - Needs the one-time `WRITE_SECURE_SETTINGS` grant (§0 B step 4).
@@ -513,7 +511,7 @@ Dashboard → **Settings**:
 
 ### NextDNS categories
 Websites → **NextDNS categories** → *Connect NextDNS…* → Profile ID (nextdns.io → Setup, e.g. `abc123`) + API key (nextdns.io → Account → API). Then:
-- **Use NextDNS as the filter**: sets Private DNS to `abc123.dns.nextdns.io` (locked, with office backup like the other filters).
+- **Use NextDNS as the filter**: sets Private DNS to `abc123.dns.nextdns.io` (locked, switches to Automatic on networks that block it, like the other filters).
 - Switch categories: Adult content, Gambling, Dating, Piracy, Social networks, Online gaming, Video streaming. Plus **SafeSearch**, **YouTube restricted mode** and **Block bypass methods**. Turning anything off goes through the Filter guard.
 - **Send my blocked sites to NextDNS**: copies your blocked-site list to the NextDNS denylist, so it applies in every app and in Private Space.
 
@@ -631,7 +629,7 @@ MDM_App/
 | Any DPM call | `Mdm.kt` → `class Mdm` (`setHidden`, `setSuspended`, `setRestriction`, `isOwner`…) |
 | Restriction switches | `Mdm.kt` → `RESTRICTION_GROUPS` |
 | Undo everything | `Mdm.kt` → `releaseAll()` |
-| Office-network backup | `Features.kt` → `SmartDns` (`check`, `enterFallback`, `exitFallback`, `bootstrap`, `dohUrl`); network watcher in `GuardService` (`registerDefaultNetworkCallback`); DoH and split DNS in `DnsVpnService` (`doh`, `forwardLocal`) |
+| Auto-switch on blocking networks | `Features.kt` → `SmartDns` (`check`, `enterFallback` = Private DNS → Automatic, `exitFallback`, `cleanup`, `bootstrap`); network watcher in `GuardService` (`registerDefaultNetworkCallback`). The DoH/split-DNS code in `DnsVpnService` is no longer used by it. |
 | PIN recovery | `Prefs.kt` → `newRecoveryCode/checkRecovery/clearPin`, `Session.tryRecovery`; `MainActivity` → `forgotPin`, `showRecoveryCode`, `securityMenu`; `PinResetReceiver.kt` (ADB reset) |
 | Private DNS filter | `Features.kt` → `PrivateDns` (`PROVIDERS`, `apply()`; this does a network check, so run it off the main thread) |
 | Chrome policies | `Features.kt` → `ChromePolicy.apply()` (Bundle keys = Chrome enterprise policy names) |
@@ -741,7 +739,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | **"Unaffiliated users" error (Private DNS filter)** | Phone-wide policies such as Private DNS need **every user to be affiliated** with the Device Owner. Private Space can never be affiliated (Android doesn't allow an admin inside it), so the app can't set Private DNS while it exists. **Workarounds that keep Private Space:** (1) set Private DNS **from the PC** (see *Websites → Private Space on the phone* in §7), whole phone; (2) VPN filter + Family-safe upstream, main profile only; (3) Chrome rules. Check users with `adb shell pm list users`. |
 | **vivo ignores "Lock Private DNS"** | The restriction is applied (`dumpsys device_policy` shows `disallow_config_private_dns = true`), but vivo's custom Private DNS screen doesn't check it. Fix: `WRITE_SECURE_SETTINGS` granted over ADB. `GuardService` watches `private_dns_mode`/`private_dns_specifier` with a `ContentObserver` and restores the chosen host (`PrivateDns.enforce`). |
 | **"Lock Private DNS" also blocks DeviceGuard** | While `DISALLOW_CONFIG_PRIVATE_DNS` is on, Android's SettingsProvider **silently ignores** writes to `private_dns_*` from every app and from `adb shell settings put` (only the system Settings app is exempt, which is how vivo Settings can switch it off). `PrivateDns.write()` lifts the restriction for a moment, writes, reads it back to check, and re-applies it. To change Private DNS from the PC, first turn the lock off in the app. |
-| **Networks that block port 853** | Strict Private DNS has no fallback, so the internet dies. `SmartDns` tests 853 with bootstrap IPs (no DNS needed), then switches to the VPN filter with a DoH upstream. DeviceGuard is excluded from its own VPN (`addDisallowedApplication`) so its DoH requests and network tests go straight out. |
+| **Networks that block port 853** | Strict Private DNS has no fallback, so the internet dies. `SmartDns` tests 853 with bootstrap IPs (no DNS needed) and switches Private DNS to Automatic on that network. The earlier VPN/DoH backup was removed because many apps failed to open through the VPN. |
 | **No Device Owner API for force stop or background restriction** | Force stop = `setApplicationHidden(true)` then `false` (hiding kills the app). `GuardService` ignores the resulting "package added" broadcast (`AppControl.isIgnored`). Android's Restricted mode (`RUN_ANY_IN_BACKGROUND` appop + `restricted` standby bucket) is ADB-only, so the app builds the commands. Reading the state needs the `GET_APP_OPS_STATS` grant. Check on each launcher that hide/unhide keeps the home-screen icon in place. |
 | **testOnly per build type** | The manifest uses `android:testOnly="${testOnly}"`: `true` for debug (ADB escape hatch), `false` for release (needed for QR provisioning and auto-update, because Android refuses to install testOnly APKs there). |
 | **Usage access is ADB/Settings only** | Device Owner can't grant itself usage access: `appops set com.devguard.mdm GET_USAGE_STATS allow` (one-time). |
@@ -807,7 +805,8 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-10 | **Office network backup (Smart DNS):** network watcher, port-853 test on connect, remembered blocking networks, backup VPN filter over DoH, office domains (split DNS), status card. **PIN recovery:** one-time recovery code, "Forgot PIN?" on the lock screen, ADB reset receiver, dashboard reminder, PIN & recovery tile. |
 | 2026-11-13 | Fix: switching to the VPN filter cleared the Private DNS filter before the VPN started, so a cancelled or stopped VPN left **no filter at all**. Now the Private DNS filter is only replaced after the VPN really starts. "No website filter is active" warning (dashboard tile turns red). Disable incognito also turns on Allow only Chrome (incognito can't be disabled in other browsers). |
 | 2026-11-13 | **Filter guard:** typing puzzle (no paste) + maths + optional cooling-off wait before weakening any website filter (Websites screen only). Code in `Guard.kt`. |
-| 2026-11-13 | **Background apps:** force stop any app; per-app "no background running" (stopped 10 s after screen off); Android Restricted mode commands + `toolsackground.ps1`; Apps dialog gets "Actions…" (Force stop / Uninstall / Bloatware) and NO-BG/STOPPED tags; dashboard Play Store tile replaced by Background. |
+| 2026-11-13 | **Background apps:** force stop any app; per-app "no background running" (stopped 10 s after screen off); Android Restricted mode commands + `tools\background.ps1`; Apps dialog gets "Actions…" (Force stop / Uninstall / Bloatware) and NO-BG/STOPPED tags; dashboard Play Store tile replaced by Background. |
 | 2026-11-13 | **v2.0:** Screen time (daily limits, schedules for apps and sites, temporary unlock, 7-day usage); two-factor unlock (TOTP); per-app permission control; Wi-Fi allowlist; system update policy; profile export/import; QR provisioning; NextDNS categories; GitHub Releases auto-update + `tools\release.ps1`; release build (not testOnly, same signing key); `.gitignore` for build outputs. Dashboard: Screen time + Settings tiles. |
+| 2026-11-23 | **No VPN backup:** on networks that block the filter's DNS (port 853), Private DNS now switches to **Automatic** instead of starting the VPN (many apps failed to open through it); the filter returns on other networks. Office-domain (split DNS) settings removed from the UI. Filter guard removed from the VPN filter switches. |
 
 © Sakthivel J

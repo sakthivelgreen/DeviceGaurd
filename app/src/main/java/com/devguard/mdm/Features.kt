@@ -151,7 +151,7 @@ object PrivateDns {
         val mode = android.provider.Settings.Global.getString(cr, MODE)
         val spec = android.provider.Settings.Global.getString(cr, SPEC)
         if (SmartDns.fallbackActive(c)) {
-            // Backup mode: the VPN filter handles DNS; Private DNS must stay on "automatic" so it doesn't bypass it.
+            // Backup mode: this network blocks the filter's DNS, so Private DNS stays on "automatic".
             if (mode == "opportunistic") return false
             write(c, null)
             return true
@@ -244,10 +244,10 @@ object PrivateDns {
  * Smart DNS: keeps the family filter working on networks that block DNS-over-TLS (port 853), e.g. office Wi-Fi.
  *
  *  - On every network change GuardService calls [check]. It tests port 853 to the filter on that network (2–4 s).
- *  - Blocked → [enterFallback]: the app's VPN filter starts and sends lookups to the SAME filter over HTTPS (DoH, port 443),
- *    Private DNS is set to "automatic" so it doesn't bypass the VPN. Office domains go to the office DNS (split DNS).
- *  - Networks that blocked 853 are remembered → next time the backup starts instantly (then re-verified in the background).
- *  - 853 works again → [exitFallback]: Private DNS filter restored, VPN stopped.
+ *  - Blocked → [enterFallback]: Private DNS is set to "automatic" so the internet works (no family filter on that network).
+ *    No VPN is used any more (many apps failed to open through it).
+ *  - Networks that blocked 853 are remembered → next time it switches instantly (then re-verified in the background).
+ *  - 853 works again → [exitFallback]: Private DNS filter restored.
  */
 object SmartDns {
     private const val NOTIFY_ID = 4242
@@ -257,6 +257,15 @@ object SmartDns {
     fun autoOn(c: Context) = !Prefs.getFlag(c, Prefs.SMART_DNS_OFF)
     fun enabled(c: Context) = autoOn(c) && Prefs.privateDnsHost(c) != null && PrivateDns.canWrite(c) && Mdm(c).isOwner
     fun fallbackActive(c: Context) = Prefs.getFlag(c, Prefs.DNS_FALLBACK)
+
+    /** Stops a VPN that an older version started for backup mode (backup no longer uses the VPN). */
+    fun cleanup(c: Context) {
+        if (Prefs.webBlock(c)) return
+        val m = Mdm(c)
+        if (m.isOwner && runCatching { m.dpm.getAlwaysOnVpnPackage(m.admin) }.getOrNull() == c.packageName)
+            runCatching { m.dpm.setAlwaysOnVpnPackage(m.admin, null, false) }
+        runCatching { c.startService(Intent(c, DnsVpnService::class.java).setAction(DnsVpnService.ACTION_STOP)) }
+    }
 
     /** Known IPs for the filter servers, so the test doesn't need DNS (which is what's broken). */
     fun bootstrap(host: String): List<String> = when {
@@ -336,34 +345,28 @@ object SmartDns {
         }
     }
 
+    /**
+     * The filter's DNS can't be reached on this network: switch Private DNS to "Automatic" so the internet
+     * keeps working (no filtering on this network). No VPN is used: many apps failed to open through it.
+     */
     fun enterFallback(c: Context) {
-        val m = Mdm(c)
         Prefs.setFlag(c, Prefs.DNS_FALLBACK, true)
-        DnsVpnService.reload(c)
-        // VPN first (so there is no unfiltered gap), then Private DNS → automatic.
-        runCatching { m.dpm.setAlwaysOnVpnPackage(m.admin, c.packageName, false) }
-        runCatching { c.startService(Intent(c, DnsVpnService::class.java)) }
         PrivateDns.write(c, null)
         val nm = c.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("smartdns", "Network filter", NotificationManager.IMPORTANCE_LOW))
         val n = Notification.Builder(c, "smartdns")
             .setSmallIcon(R.drawable.ic_shield)
-            .setContentTitle("Backup web filter on")
-            .setContentText("This network blocks secure DNS, so filtering continues through DeviceGuard.")
+            .setContentTitle("Private DNS on Automatic")
+            .setContentText("This network blocks the filter's DNS. The filter comes back on other networks.")
             .setOngoing(true)
             .build()
         runCatching { nm.notify(NOTIFY_ID, n) }
     }
 
     fun exitFallback(c: Context) {
-        val m = Mdm(c)
         Prefs.setFlag(c, Prefs.DNS_FALLBACK, false)
-        Prefs.privateDnsHost(c)?.let { PrivateDns.write(c, it) } // filter back on Private DNS first
-        DnsVpnService.reload(c)
-        if (!Prefs.webBlock(c)) {
-            runCatching { m.dpm.setAlwaysOnVpnPackage(m.admin, null, false) }
-            runCatching { c.startService(Intent(c, DnsVpnService::class.java).setAction(DnsVpnService.ACTION_STOP)) }
-        }
+        Prefs.privateDnsHost(c)?.let { PrivateDns.write(c, it) } // filter back on Private DNS
+        cleanup(c)
         runCatching { c.getSystemService(NotificationManager::class.java).cancel(NOTIFY_ID) }
     }
 
@@ -371,13 +374,8 @@ object SmartDns {
     fun reset(c: Context) {
         lastKey = null
         if (!fallbackActive(c)) return
-        val m = Mdm(c)
         Prefs.setFlag(c, Prefs.DNS_FALLBACK, false)
-        DnsVpnService.reload(c)
-        if (!Prefs.webBlock(c)) {
-            runCatching { m.dpm.setAlwaysOnVpnPackage(m.admin, null, false) }
-            runCatching { c.startService(Intent(c, DnsVpnService::class.java).setAction(DnsVpnService.ACTION_STOP)) }
-        }
+        cleanup(c)
         runCatching { c.getSystemService(NotificationManager::class.java).cancel(NOTIFY_ID) }
     }
 

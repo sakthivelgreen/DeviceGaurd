@@ -132,7 +132,7 @@ object Prefs {
 
     // ---- Smart DNS (office-network backup) ----
     const val SMART_DNS_OFF = "smartDnsOff"      // default ON (flag is "off")
-    const val DNS_FALLBACK = "dnsFallback"       // true while the backup VPN filter is in use
+    const val DNS_FALLBACK = "dnsFallback"       // true while Private DNS is on Automatic because this network blocks the filter
     fun officeDomains(c: Context) = set(c, "officeDomains")
     fun setOfficeDomains(c: Context, v: Set<String>) = putSet(c, "officeDomains", v)
     fun dnsBlockedNets(c: Context) = set(c, "dnsBlockedNets")

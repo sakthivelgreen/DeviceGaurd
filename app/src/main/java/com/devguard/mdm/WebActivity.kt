@@ -219,11 +219,11 @@ class WebActivity : BaseActivity() {
             val backup = SmartDns.fallbackActive(context)
             text("Current: " + when {
                 backup && chosen != null ->
-                    (PrivateDns.PROVIDERS.firstOrNull { it.host == chosen }?.name ?: chosen) + " (backup mode on this network)"
+                    (PrivateDns.PROVIDERS.firstOrNull { it.host == chosen }?.name ?: chosen) + " · paused: Automatic on this network"
                 host == null -> "Off"
                 provider != null -> "${provider.name} ($host)"
                 else -> "Custom ($host)"
-            }, 15f, bold = true, color = if (host != null || backup) Palette.GREEN else null)
+            }, 15f, bold = true, color = if (backup) Palette.ORANGE else if (host != null) Palette.GREEN else null)
 
             val canWrite = PrivateDns.canWrite(context)
             val locked = Prefs.privateDnsHost(context)
@@ -288,52 +288,25 @@ class WebActivity : BaseActivity() {
                 }
             }
 
-            // ---- Smart DNS: office-network backup ----
-            if (Prefs.privateDnsHost(context) != null) card("Office network backup") {
+            // ---- Smart DNS: switch to Automatic on networks that block the filter ----
+            if (Prefs.privateDnsHost(context) != null) card("When the filter's DNS can't connect") {
                 text(
                     "Some networks (often office Wi-Fi) block the filter's secure DNS (port 853), so the internet stops working. " +
-                        "DeviceGuard notices within seconds and keeps filtering through a backup over HTTPS, so the internet keeps working. " +
-                        "It switches back automatically on other networks.",
+                        "DeviceGuard notices within seconds and switches Private DNS to Automatic on that network, so the internet keeps working " +
+                        "(no family filter there; Chrome rules still apply). The filter comes back automatically on other networks. No VPN is used.",
                     13f,
                 ).alpha = 0.8f
                 switchRow(
-                    "Automatic backup",
+                    "Switch to Automatic when blocked",
                     if (PrivateDns.canWrite(context)) "Recommended" else "Needs the one-time setup command above",
                     SmartDns.autoOn(context), owner && PrivateDns.canWrite(context),
-                ) { _, on -> guardOff("turn off the automatic backup", on) { SmartDns.setAuto(this@WebActivity, on) } }
+                ) { _, on -> SmartDns.setAuto(this@WebActivity, on); render(); true }
                 text(
-                    if (SmartDns.fallbackActive(context)) "🛡️ Now: backup filter (this network blocks secure DNS)"
-                    else "✅ Now: normal Private DNS filter",
+                    if (SmartDns.fallbackActive(context)) "⚠️ Now: Automatic (this network blocks the filter's DNS)"
+                    else "✅ Now: Private DNS filter",
                     13f, bold = true,
                     color = if (SmartDns.fallbackActive(context)) Palette.ORANGE else Palette.GREEN,
                 )
-                text("Note: in backup mode the filter covers the main profile only, not Private Space.", 12f).alpha = 0.6f
-
-                section("Office domains (intranet)")
-                text("Names that only your office DNS knows, e.g. corp.local or intranet.company.com. Used in backup mode.", 12f).alpha = 0.7f
-                val od = EditText(context).apply {
-                    hint = "intranet.company.com"
-                    isSingleLine = true
-                    inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
-                }
-                addView(od)
-                button("Add office domain", outlined = true) {
-                    val d = WebFilter.normalize(od.text.toString())
-                        ?: od.text.toString().trim().lowercase().takeIf { Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)*$").matches(it) }
-                    // Office domains skip the family filter, so adding one needs the guard.
-                    if (d == null) toast("Enter a domain like corp.local") else Guard.require(this@WebActivity, "let $d skip the filter") {
-                        Prefs.setOfficeDomains(this@WebActivity, Prefs.officeDomains(this@WebActivity) + d)
-                        DnsVpnService.reload(this@WebActivity); render()
-                    }
-                }
-                Prefs.officeDomains(context).sorted().forEach { d ->
-                    text("🏢  $d", 15f).setOnClickListener {
-                        confirm("Remove $d?", "It will be resolved through the family filter again.", "Remove") {
-                            Prefs.setOfficeDomains(this@WebActivity, Prefs.officeDomains(this@WebActivity) - d)
-                            DnsVpnService.reload(this@WebActivity); render()
-                        }
-                    }
-                }
                 val remembered = Prefs.dnsBlockedNets(context).size
                 if (remembered > 0) button("Forget $remembered remembered network(s)", outlined = true) {
                     SmartDns.forgetNetworks(this@WebActivity); GuardService.refresh(this@WebActivity); render()
@@ -439,20 +412,15 @@ class WebActivity : BaseActivity() {
                 if (owner) "Always-on: the user can't turn it off" else "Not Device Owner: the user can turn this off",
                 Prefs.webBlock(context),
             ) { _, on ->
-                if (!on) guardOff("turn off the VPN filter", false) { WebFilter.disable(this@WebActivity) }
-                else if (host != null) {
-                    // Replaces the Private DNS filter (which also covers Private Space), so it needs the guard.
-                    Guard.require(this@WebActivity, "replace the Private DNS filter with the VPN filter") {
-                        act { WebFilter.enable(this@WebActivity) }; render()
-                    }
-                    false
-                } else WebFilter.enable(this@WebActivity)
+                // No filter guard on the VPN switches (removed on request).
+                if (!on) { WebFilter.disable(this@WebActivity); render(); true }
+                else WebFilter.enable(this@WebActivity)
             }
             switchRow(
                 "Family-safe upstream for VPN",
                 "VPN filter also blocks adult and malware sites (Cloudflare 1.1.1.3)",
                 Prefs.familyDns(context),
-            ) { _, on -> guardOff("turn off family-safe DNS for the VPN", on) { Prefs.setFamilyDns(this@WebActivity, on); DnsVpnService.reload(this@WebActivity) } }
+            ) { _, on -> Prefs.setFamilyDns(this@WebActivity, on); DnsVpnService.reload(this@WebActivity); true }
             }
 
             text("Tip: browsers cache lookups. If a newly blocked site still opens, close and reopen the browser.", 12f).alpha = 0.6f
