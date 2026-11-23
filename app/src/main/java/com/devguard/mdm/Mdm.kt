@@ -89,6 +89,7 @@ class Mdm(private val c: Context) {
     fun ensureBaseline() {
         if (!isOwner) return
         runCatching { dpm.setUninstallBlocked(admin, pkg, true) }
+        Branding.apply(c) // organization name + lock screen / support messages
         if (Build.VERSION.SDK_INT >= 33) runCatching {
             dpm.setPermissionGrantState(
                 admin, pkg, Manifest.permission.POST_NOTIFICATIONS,

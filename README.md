@@ -187,6 +187,7 @@ Security: the ADB reset only accepts the ADB shell (the receiver requires the `D
 | **Profile backup** | Export every setting to a JSON file and import it again, e.g. after a reset. Secrets aren't exported. |
 | **QR provisioning** | Set up another phone as Device Owner by scanning a QR code during setup, with no PC. |
 | **NextDNS categories** | Use your NextDNS profile as the filter and switch categories (adult, gambling, dating, piracy, social, gaming, video) plus SafeSearch, YouTube restricted and block-bypass from the app. |
+| **Lock screen & branding** | "Managed by **Sakthivel J**" instead of "your organization", plus your own lock screen line and the message shown when something is blocked. The managed notice itself can't be hidden. |
 | **App updates** | Silent auto-update from GitHub Releases (`build-<versionCode>` tags). `tools\release.ps1` builds and publishes. |
 | **Kiosk mode** | Lock the phone to chosen apps (lock task mode plus a forced home screen showing app tiles). |
 | **Device actions** | Lock now, reboot, change PIN, release Device Owner, factory reset. |
@@ -505,6 +506,14 @@ Restrictions → **System updates**: phone default / install automatically / ins
 ### Settings
 Dashboard → **Settings**:
 - **Admin PIN & recovery**, **Two-factor unlock** (above).
+- **Lock screen & branding:** tap a text to change it (empty = hidden), or *Reset to defaults*. Defaults:
+  | Text | Default | Where it shows |
+  |---|---|---|
+  | Organization name | Sakthivel J | Lock screen / quick settings / Settings: "This device is managed by Sakthivel J" |
+  | Lock screen message | Managed by Sakthivel J | Extra line on the lock screen |
+  | Message when something is blocked | Blocked by Sakthivel J | Pop-up when a blocked setting is tapped |
+  | Device admin info | This phone is managed by Sakthivel J with DeviceGuard MDM. | Settings → Security → Device admin apps |
+  Android always shows that a Device Owner manages the phone. Only these texts can change. They're applied at every start, after updates and after a profile import; lock screen changes show after the screen turns off and on.
 - **Backup & restore profile:** *Export profile…* saves a `deviceguard-profile-YYYYMMDD.json` (restrictions, hidden/suspended/uninstall-blocked apps, filters, blocked apps and sites, screen time, background list, Chrome rules, Wi-Fi list, update policy). *Import profile…* applies one. PIN, recovery code, authenticator secret and tokens are never exported.
 - **Set up another phone (QR code):** enter a public direct-download link to the **release** APK (and optionally Wi-Fi), then *Show QR*. On the new phone: welcome screen → tap 6 times → scan. Android downloads DeviceGuard, checks its signature and makes it Device Owner. Then set the PIN and import your profile. A private GitHub link won't work; use a public release or any direct-download host.
 - **App updates:** repository (default `sakthivelgreen/DeviceGaurd`) and, for a private repo, a fine-grained GitHub token with *Contents: Read-only*. *Check for updates now*, or turn on *Check daily (auto-install)*. Updates install silently as Device Owner.
@@ -591,6 +600,7 @@ MDM_App/
             ├── AdminUi.kt               Shared dialogs: recovery code, PC reset, change PIN, TOTP prompt/setup
             ├── SettingsActivity.kt      PIN/2FA, profile export/import, provisioning QR, app updates
             ├── Device.kt                Wi-Fi allowlist, system update policy, per-app permissions, provisioning JSON
+            ├── Branding.kt              Organization name, lock screen message, support messages (defaults: Sakthivel J)
             ├── Profile.kt               Policy profile export/import (JSON)
             ├── Updater.kt               GitHub Releases auto-update (silent PackageInstaller install)
             ├── NextDns.kt               NextDNS API: categories, SafeSearch/YouTube/bypass, denylist sync
@@ -808,5 +818,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-13 | **Background apps:** force stop any app; per-app "no background running" (stopped 10 s after screen off); Android Restricted mode commands + `tools\background.ps1`; Apps dialog gets "Actions…" (Force stop / Uninstall / Bloatware) and NO-BG/STOPPED tags; dashboard Play Store tile replaced by Background. |
 | 2026-11-13 | **v2.0:** Screen time (daily limits, schedules for apps and sites, temporary unlock, 7-day usage); two-factor unlock (TOTP); per-app permission control; Wi-Fi allowlist; system update policy; profile export/import; QR provisioning; NextDNS categories; GitHub Releases auto-update + `tools\release.ps1`; release build (not testOnly, same signing key); `.gitignore` for build outputs. Dashboard: Screen time + Settings tiles. |
 | 2026-11-23 | **No VPN backup:** on networks that block the filter's DNS (port 853), Private DNS now switches to **Automatic** instead of starting the VPN (many apps failed to open through it); the filter returns on other networks. Office-domain (split DNS) settings removed from the UI. Filter guard removed from the VPN filter switches. |
+| 2026-11-23 | **Lock screen & branding** (Settings): organization name, lock screen message and support messages, default "Sakthivel J" (`Branding.kt`, applied from `ensureBaseline`). |
 
 © Sakthivel J

@@ -71,6 +71,26 @@ class SettingsActivity : BaseActivity() {
                 } else button("Turn on") { setupTotpDialog { render() } }
             }
 
+            card("Lock screen & branding") {
+                text(
+                    "Android always shows that this phone is managed. These texts replace \"your organization\" and add your own messages. " +
+                        "Tap one to change it; leave it empty to hide it.",
+                    13f,
+                ).alpha = 0.8f
+                Branding.FIELDS.forEach { f ->
+                    val v = Branding.value(context, f)
+                    text(f.title, 12f).alpha = 0.7f
+                    text(v.ifBlank { "(hidden)" }, 15f, bold = true).apply {
+                        setPadding(0, 0, 0, dp(8))
+                        setOnClickListener { if (owner) editBranding(f) }
+                    }
+                }
+                button("Reset to defaults (Sakthivel J)", outlined = true) {
+                    Branding.resetDefaults(this@SettingsActivity); toast("Defaults applied"); render()
+                }.isEnabled = owner
+                text("Lock screen changes show after the screen turns off and on. vivo may shorten long messages.", 12f).alpha = 0.6f
+            }
+
             card("Backup & restore profile") {
                 text("Save every setting (restrictions, filters, blocked apps and sites, screen time, background list) to a file, " +
                     "e.g. to restore after a factory reset. The PIN and secrets are not included.", 13f).alpha = 0.8f
@@ -104,6 +124,21 @@ class SettingsActivity : BaseActivity() {
                 button("About DeviceGuard", outlined = true) { startActivity(Intent(this@SettingsActivity, AboutActivity::class.java)) }
             }
         }
+    }
+
+    private fun editBranding(f: Branding.Field) {
+        val input = EditText(this).apply {
+            setText(Branding.value(this@SettingsActivity, f))
+            filters = arrayOf(android.text.InputFilter.LengthFilter(f.maxLen))
+            if (f.maxLen > 120) { minLines = 2; isSingleLine = false } else isSingleLine = true
+        }
+        val col = column().apply { addView(input) }
+        MaterialAlertDialogBuilder(this).setTitle(f.title).setView(col)
+            .setPositiveButton("Save") { _, _ ->
+                Branding.set(this, f.key, input.text.toString()); toast("Saved"); render()
+            }
+            .setNeutralButton("Default") { _, _ -> Prefs.setStr(this, f.key, null); Branding.apply(this); render() }
+            .setNegativeButton("Cancel", null).show()
     }
 
     private fun updateSettings() {

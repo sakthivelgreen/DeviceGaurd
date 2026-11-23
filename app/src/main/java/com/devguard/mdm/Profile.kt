@@ -78,6 +78,7 @@ object Profile {
         runCatching { Device.applyWifiAllow(c) }
         DnsVpnService.reload(c)
         GuardService.refresh(c)
+        Branding.apply(c)
         runCatching { ScreenTime.evaluate(c) }
         return "Profile imported: $applied restrictions/hidden apps applied, settings restored."
     }
