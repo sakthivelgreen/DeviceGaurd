@@ -6,8 +6,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-// Signing. The app's key lives in a keystore OUTSIDE the repo, described by keystore.properties (git-ignored):
-//   storeFile=D:/keys/deviceguard.keystore
+// Signing. The app's key lives in keys/ (git-ignored), described by keystore.properties (git-ignored):
+//   storeFile=keys/deviceguard.keystore      (relative to MDM_App/, or an absolute path)
 //   storePassword=...
 //   keyAlias=androiddebugkey
 //   keyPassword=...
@@ -36,7 +36,7 @@ android {
     signingConfigs {
         create("release") {
             if (keystoreProps.getProperty("storeFile") != null) {
-                storeFile = file(keystoreProps.getProperty("storeFile"))
+                storeFile = rootProject.file(keystoreProps.getProperty("storeFile")) // relative to MDM_App/
                 storePassword = keystoreProps.getProperty("storePassword")
                 keyAlias = keystoreProps.getProperty("keyAlias")
                 keyPassword = keystoreProps.getProperty("keyPassword")

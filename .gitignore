@@ -7,9 +7,10 @@ build/
 app/build/
 dist/
 
-# Machine-specific / secrets
+# Machine-specific / secrets (signing key: back these up, never commit them)
 local.properties
 keystore.properties
+keys/
 *.jks
 *.keystore
 

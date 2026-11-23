@@ -97,7 +97,7 @@ cd D:\TV_CLEANUP\MDM_App; .\gradlew.bat assembleDebug
 & $adb shell dpm list-owners                          # should still show DeviceOwner
 ```
 - Turn off **Block all installs** in the app first if it's on.
-- The new APK must be signed with the **same key**: `D:\keys\deviceguard.keystore` via `keystore.properties` (§10.9). Keep both backed up.
+- The new APK must be signed with the **same key**: `keys\deviceguard.keystore` via `keystore.properties` (§10.9). Keep both backed up.
 
 ### E. Remove Device Owner (keep the app installed)
 Pick one:
@@ -292,7 +292,7 @@ cd D:\TV_CLEANUP\MDM_App\tools
 $env:GITHUB_TOKEN = "github_pat_..."             # Contents: Read and write on the repo
 .\release.ps1 -Upload -Notes "What's new"        # creates release build-<versionCode> with DeviceGuard.apk
 ```
-Debug and release builds are signed with the **same key** (`D:\keys\deviceguard.keystore`, described by the git-ignored `keystore.properties`, §10.9), so either can update the other. Keep installing the **debug** build on the phone while developing: only it has the `testOnly` ADB escape hatch.
+Debug and release builds are signed with the **same key** (`keys\deviceguard.keystore`, described by `keystore.properties`; both git-ignored, §10.9), so either can update the other. Keep installing the **debug** build on the phone while developing: only it has the `testOnly` ADB escape hatch.
 
 ---
 
@@ -563,7 +563,9 @@ MDM_App/
 ├── gradle.properties          ← JVM args, AndroidX flags
 ├── local.properties           ← sdk.dir (machine-specific)
 ├── gradlew(.bat), gradle/     ← Gradle wrapper 8.14.3
-├── .gitignore                 ← build outputs, dist/, local.properties, keystore files are not committed
+├── .gitignore                 ← build outputs, dist/, local.properties, keys/ and keystore.properties are not committed
+├── keys/deviceguard.keystore  ← signing key (NOT in git; back it up with keystore.properties)
+├── keystore.properties        ← keystore path + password (NOT in git)
 ├── platform-tools/            ← ADB (adb.exe v37 + DLLs), bundled so every command uses .\platform-tools\adb.exe
 ├── tools/
 │   ├── debloat.ps1            ← PC bloatware tool (reads app/src/main/assets/bloat.csv)
@@ -725,14 +727,14 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 
    | File | Where | In git? |
    |---|---|---|
-   | `deviceguard.keystore` (PKCS12, alias `androiddebugkey`) | `D:\keys\` | ❌ never |
+   | `deviceguard.keystore` (PKCS12, alias `androiddebugkey`) | `MDM_App\keys\` | ❌ git-ignored (`keys/`) |
    | `keystore.properties` (path + password) | `MDM_App\` root | ❌ git-ignored |
 
    Certificate SHA-256: `E8:92:FC:E3:C9:4D:1E:D0:2A:39:25:2A:E6:8D:EE:17:EF:2D:59:31:FE:38:22:53:4A:90:FE:4A:88:4C:DE:E2`. That's the key of the app installed on the phone, originally the PC's debug key, now with its own strong password. `app/build.gradle.kts` reads `keystore.properties`; without it, builds fall back to `%USERPROFILE%\.android\debug.keystore` (same key, password `android`).
 
    ⚠️ **Never generate a new key for this app.** Android only installs updates signed with the same key. A different key means uninstalling, releasing Device Owner, and setting it up again (no accounts on the phone, in practice a factory reset). **Keep both files backed up together** in at least two places off this PC.
 
-   **Restore on a new PC:** copy `deviceguard.keystore` to `D:\keys\` (or anywhere, then fix `storeFile`), copy `keystore.properties` to the `MDM_App` root, build, then check:
+   **Restore on a new PC:** copy `deviceguard.keystore` to `MDM_App\keys\` (`storeFile=keys/deviceguard.keystore` is relative to `MDM_App`; an absolute path also works), copy `keystore.properties` to the `MDM_App` root, build, then check:
    ```powershell
    & "D:\TV_CLEANUP\android-sdk\build-tools\36.0.0\apksigner.bat" verify --print-certs app\build\outputs\apk\release\app-release.apk
    ```
@@ -837,6 +839,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-23 | Fix: leaving NextDNS failed with "didn't respond as a DNS-over-TLS server". NextDNS *Block bypass methods* blocks the names of other DNS services, so Android's pre-check failed. Built-in filters are now tested by their fixed IPs and written directly. |
 | 2026-11-23 | **Auto-fallback on any failure:** if the filter's DNS stops responding on the current network (detected when Android marks the connection not validated), Private DNS switches to Automatic within seconds. On mobile data it's re-checked every 3 minutes and on screen on, and the filter returns as soon as it connects. |
 | 2026-11-23 | **Lock screen & branding** (Settings): organization name, lock screen message and support messages, default "Sakthivel J" (`Branding.kt`, applied from `ensureBaseline`). |
-| 2026-11-23 | **Signing key:** the app's key moved to `D:\keys\deviceguard.keystore` with a strong password (same key, fingerprint `E8:92:FC:E3…`). `keystore.properties` (git-ignored) points to it; debug and release builds both use it. README §10.9 rewritten (the old advice to generate a new key would have broken updates).
+| 2026-11-23 | **Signing key:** the app's key moved to `keys\deviceguard.keystore` (in the project, git-ignored) with a strong password (same key, fingerprint `E8:92:FC:E3…`). `keystore.properties` (git-ignored) points to it; debug and release builds both use it. README §10.9 rewritten (the old advice to generate a new key would have broken updates).
 
 © Sakthivel J
