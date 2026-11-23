@@ -133,15 +133,32 @@ object PrivateDns {
         return ok
     }
 
-    /** Checks the host answers DNS-over-TLS on port 853 (blocking). */
-    private fun reachable(host: String): Boolean = runCatching {
-        (javax.net.ssl.SSLSocketFactory.getDefault().createSocket() as javax.net.ssl.SSLSocket).use { s ->
-            s.connect(java.net.InetSocketAddress(host, 853), 4000)
-            s.soTimeout = 4000
-            s.startHandshake()
+    /**
+     * Checks the host answers DNS-over-TLS on port 853 (blocking). Known filters are tested by their fixed IPs
+     * (with the hostname for TLS), because the current filter may block looking up another DNS service's name
+     * (e.g. NextDNS "Block bypass methods" answers 127.0.0.1 for family.cloudflare-dns.com).
+     */
+    private fun reachable(host: String): Boolean {
+        val ips = SmartDns.bootstrap(host).mapNotNull { runCatching { java.net.InetAddress.getByName(it) }.getOrNull() }
+        val targets: List<java.net.InetSocketAddress> =
+            if (ips.isNotEmpty()) ips.map { java.net.InetSocketAddress(it, 853) }
+            else listOf(java.net.InetSocketAddress(host, 853))
+        val factory = javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory
+        for (t in targets) {
+            val ok = runCatching {
+                java.net.Socket().use { raw ->
+                    raw.connect(t, 4000)
+                    (factory.createSocket(raw, host, 853, true) as javax.net.ssl.SSLSocket).use { s ->
+                        s.soTimeout = 4000
+                        s.startHandshake()
+                    }
+                }
+                true
+            }.getOrDefault(false)
+            if (ok) return true
         }
-        true
-    }.getOrDefault(false)
+        return false
+    }
 
     /**
      * Lock enforcement: if the chosen filter host was changed (e.g. in vivo Settings, which ignores the
@@ -226,8 +243,12 @@ object PrivateDns {
         }
         when (viaDpm) {
             DevicePolicyManager.PRIVATE_DNS_SET_NO_ERROR -> Unit
-            DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING ->
-                return "$host didn't respond as a DNS-over-TLS server. Check the name and the internet connection."
+            DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING -> {
+                // Android's check looks the name up through the CURRENT filter, which may block it
+                // (NextDNS "Block bypass methods"). Re-test by IP and write directly if it really works.
+                if (!(canWrite(c) && reachable(host) && write(c, host)))
+                    return "$host didn't respond as a DNS-over-TLS server. Check the name and the internet connection."
+            }
             null -> {
                 if (!canWrite(c)) return UNAFFILIATED_HELP
                 if (!reachable(host)) return "$host didn't respond as a DNS-over-TLS server. Check the name and the internet connection."
