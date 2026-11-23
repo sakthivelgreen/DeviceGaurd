@@ -344,9 +344,13 @@ object SmartDns {
         return false
     }
 
-    /** Runs on a background thread for every network change. */
+    /**
+     * Runs on a background thread for every network change, and every few minutes from GuardService
+     * ([force] = true) so a filter that stops responding on the SAME network also falls back to Automatic,
+     * and the filter comes back as soon as it responds again.
+     */
     @Synchronized
-    fun check(c: Context, n: android.net.Network) {
+    fun check(c: Context, n: android.net.Network, force: Boolean = false) {
         if (!enabled(c)) { if (fallbackActive(c)) exitFallback(c); return }
         val cm = c.getSystemService(android.net.ConnectivityManager::class.java)
         val caps = cm.getNetworkCapabilities(n) ?: return
@@ -354,20 +358,35 @@ object SmartDns {
         if (caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)) return // wait for Wi-Fi login
         val key = networkKey(cm, n) ?: return
         val now = android.os.SystemClock.elapsedRealtime()
-        if (key == lastKey && now - lastAt < 60_000) return
+        if (!force && key == lastKey && now - lastAt < 60_000) return
         lastKey = key; lastAt = now
         val host = Prefs.privateDnsHost(c) ?: return
 
         // Known blocking network: switch instantly, then re-verify below.
-        if (key in Prefs.dnsBlockedNets(c) && !fallbackActive(c)) enterFallback(c)
+        if (!force && key in Prefs.dnsBlockedNets(c) && !fallbackActive(c)) enterFallback(c)
 
-        if (dotReachable(host, n)) {
+        // One retry after 2 s, so a single dropped handshake doesn't switch the filter off.
+        if (dotReachable(host, n) || (!fallbackActive(c) && run { Thread.sleep(2000); dotReachable(host, n) })) {
             Prefs.setDnsBlockedNets(c, Prefs.dnsBlockedNets(c) - key)
             if (fallbackActive(c)) exitFallback(c)
         } else {
             Prefs.setDnsBlockedNets(c, Prefs.dnsBlockedNets(c) + key)
             if (!fallbackActive(c)) enterFallback(c)
         }
+    }
+
+    fun onMobileData(c: Context): Boolean {
+        val cm = c.getSystemService(android.net.ConnectivityManager::class.java)
+        val caps = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) } ?: return false
+        return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) &&
+            !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+    }
+
+    /** Reconnect check of the current network (GuardService: on mobile data while on Automatic). */
+    fun checkNow(c: Context) {
+        val cm = c.getSystemService(android.net.ConnectivityManager::class.java)
+        val n = cm.activeNetwork ?: return
+        check(c, n, force = true)
     }
 
     /**
@@ -382,7 +401,7 @@ object SmartDns {
         val n = Notification.Builder(c, "smartdns")
             .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle("Private DNS on Automatic")
-            .setContentText("This network blocks the filter's DNS. The filter comes back on other networks.")
+            .setContentText("The filter's DNS can't be reached right now. It's re-checked every few minutes and comes back on its own.")
             .setOngoing(true)
             .build()
         runCatching { nm.notify(NOTIFY_ID, n) }

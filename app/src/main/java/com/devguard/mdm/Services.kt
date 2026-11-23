@@ -311,6 +311,10 @@ class GuardService : Service() {
     /** Separate worker for screen time and updates (netExec is busy with network checks / force stops). */
     private val work = Executors.newSingleThreadExecutor()
 
+    // ---- Filter health check (SmartDns.checkNow) ----
+    private val DNS_CHECK_MS = 3 * 60_000L
+    @Volatile private var lastDnsCheck = 0L
+
     // ---- Background apps: stop on screen off ----
     private val stopListedRunnable = Runnable {
         netExec.execute { runCatching { AppControl.stopListed(this) } }
@@ -323,6 +327,15 @@ class GuardService : Service() {
                 work.execute {
                     runCatching { ScreenTime.evaluate(c) }
                     if (i.action == Intent.ACTION_SCREEN_ON) runCatching { Updater.autoCheck(c) }
+                }
+                // Reconnect check: only while the filter is on Automatic because it couldn't connect, and only on
+                // mobile data (every 3 minutes and on screen on). Wi-Fi is re-checked when the network changes.
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (SmartDns.enabled(c) && SmartDns.fallbackActive(c) && SmartDns.onMobileData(c) &&
+                    (i.action == Intent.ACTION_SCREEN_ON || now - lastDnsCheck >= DNS_CHECK_MS)
+                ) {
+                    lastDnsCheck = now
+                    netExec.execute { runCatching { SmartDns.checkNow(c) } }
                 }
                 if (i.action == Intent.ACTION_TIME_TICK) return
             }
@@ -340,9 +353,9 @@ class GuardService : Service() {
     private val netHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private var pendingCheck: Runnable? = null
 
-    private fun scheduleCheck(n: android.net.Network, delayMs: Long) {
+    private fun scheduleCheck(n: android.net.Network, delayMs: Long, force: Boolean = false) {
         pendingCheck?.let { netHandler.removeCallbacks(it) }
-        val r = Runnable { netExec.execute { runCatching { SmartDns.check(this, n) } } }
+        val r = Runnable { netExec.execute { runCatching { SmartDns.check(this, n, force) } } }
         pendingCheck = r
         netHandler.postDelayed(r, delayMs)
     }
@@ -350,7 +363,13 @@ class GuardService : Service() {
     private val netCallback = object : android.net.ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: android.net.Network) = scheduleCheck(network, 300)
         override fun onLinkPropertiesChanged(network: android.net.Network, lp: android.net.LinkProperties) = scheduleCheck(network, 800)
-        override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) = scheduleCheck(network, 800)
+        override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) {
+            // With a strict Private DNS filter, Android drops VALIDATED when the filter can't be reached:
+            // check right away (no 60 s de-dupe) so the phone switches to Automatic within seconds.
+            val lost = !caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) &&
+                !SmartDns.fallbackActive(this@GuardService)
+            scheduleCheck(network, if (lost) 3000 else 800, force = lost)
+        }
     }
 
     private val dnsObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {

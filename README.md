@@ -433,7 +433,10 @@ When no DNS filter is active, the dashboard **Websites** tile turns red ("⚠ No
 | New network blocks 853 | Detected on connect (TLS test to the filter, 2–4 s) → Private DNS set to **Automatic** (no family filter on this network) | ~2–4 s, once |
 | Same network again | Remembered → switches instantly, then re-checked in the background | ~0–2 s |
 | Back on a normal network | Private DNS filter restored | none |
+| Filter stops responding on the **same** network (service down, mobile data problem) | Android marks the connection *not validated* → DeviceGuard tests the filter at once (with one retry) → **Automatic** | a few seconds |
+| On **mobile data** while on Automatic | Re-checked **every 3 minutes** and when the screen turns on; filter switched back as soon as it connects | none |
 
+- On Wi-Fi, Automatic is re-checked when the network changes (not every few minutes), so an office network that blocks the filter isn't tested over and over.
 - A notification "Private DNS on Automatic" shows while it's active; the Websites screen shows the filter as *paused* (orange).
 - On such a network only the **Chrome rules** still block (your site list, SafeSites, SafeSearch). The family DNS filter does not.
 - The lock stays on: while paused, Private DNS is held at Automatic and changes are reverted; elsewhere it's held at the filter.
@@ -822,6 +825,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-23 | **No VPN backup:** on networks that block the filter's DNS (port 853), Private DNS now switches to **Automatic** instead of starting the VPN (many apps failed to open through it); the filter returns on other networks. Office-domain (split DNS) settings removed from the UI. Filter guard removed from the VPN filter switches. |
 | 2026-11-23 | **NextDNS:** filter guard removed from the NextDNS switches; new **Stop using NextDNS** button switches back to AdGuard Family or Cloudflare Family (last used first). |
 | 2026-11-23 | Fix: leaving NextDNS failed with "didn't respond as a DNS-over-TLS server". NextDNS *Block bypass methods* blocks the names of other DNS services, so Android's pre-check failed. Built-in filters are now tested by their fixed IPs and written directly. |
+| 2026-11-23 | **Auto-fallback on any failure:** if the filter's DNS stops responding on the current network (detected when Android marks the connection not validated), Private DNS switches to Automatic within seconds. On mobile data it's re-checked every 3 minutes and on screen on, and the filter returns as soon as it connects. |
 | 2026-11-23 | **Lock screen & branding** (Settings): organization name, lock screen message and support messages, default "Sakthivel J" (`Branding.kt`, applied from `ensureBaseline`). |
 
 © Sakthivel J

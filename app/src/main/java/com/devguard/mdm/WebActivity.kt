@@ -305,9 +305,10 @@ class WebActivity : BaseActivity() {
             // ---- Smart DNS: switch to Automatic on networks that block the filter ----
             if (Prefs.privateDnsHost(context) != null) card("When the filter's DNS can't connect") {
                 text(
-                    "Some networks (often office Wi-Fi) block the filter's secure DNS (port 853), so the internet stops working. " +
-                        "DeviceGuard notices within seconds and switches Private DNS to Automatic on that network, so the internet keeps working " +
-                        "(no family filter there; Chrome rules still apply). The filter comes back automatically on other networks. No VPN is used.",
+                    "If the filter's secure DNS can't connect (office Wi-Fi blocking port 853, the filter service down, a mobile data problem), " +
+                        "the internet would stop working. DeviceGuard notices within seconds and switches Private DNS to Automatic, so the internet keeps working " +
+                        "(no family filter meanwhile; Chrome rules still apply). The filter comes back when you change network, and on mobile data it's " +
+                        "re-checked every 3 minutes and when the screen turns on. No VPN is used.",
                     13f,
                 ).alpha = 0.8f
                 switchRow(
@@ -316,7 +317,7 @@ class WebActivity : BaseActivity() {
                     SmartDns.autoOn(context), owner && PrivateDns.canWrite(context),
                 ) { _, on -> SmartDns.setAuto(this@WebActivity, on); render(); true }
                 text(
-                    if (SmartDns.fallbackActive(context)) "⚠️ Now: Automatic (this network blocks the filter's DNS)"
+                    if (SmartDns.fallbackActive(context)) "⚠️ Now: Automatic (the filter's DNS can't be reached on this network)"
                     else "✅ Now: Private DNS filter",
                     13f, bold = true,
                     color = if (SmartDns.fallbackActive(context)) Palette.ORANGE else Palette.GREEN,
