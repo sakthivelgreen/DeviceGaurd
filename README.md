@@ -409,7 +409,7 @@ For an extra layer, use the Play Store's own **parental controls** (Play Store �
 2. **Maths:** a 2-digit × 2-digit multiplication.
 3. **Cooling-off wait:** none, 15 (default), 30 or 60 minutes. After solving, wait, then repeat the same action **within 10 minutes** to confirm, or the request expires. The wait uses the time since boot, so changing the clock doesn't skip it and a reboot restarts it.
 
-Guarded actions (Websites screen only): filter → Off, a weaker filter (Cloudflare Security) or Custom; turning off any Chrome rule, Allow only Chrome or the incognito block; unblocking a site; shortening the wait; turning the guard off. The **VPN filter** switches (on/off, family-safe upstream) and the **Switch to Automatic when blocked** switch are **not** guarded. Switching between the family filters (Cloudflare Family ↔ AdGuard Family) is free. Restrictions, Blocked apps and the Danger zone are **not** guarded. A PIN reset doesn't turn the guard off.
+Guarded actions (Websites screen only): filter → Off, a weaker filter (Cloudflare Security) or Custom; turning off any Chrome rule, Allow only Chrome or the incognito block; unblocking a site; shortening the wait; turning the guard off. The **VPN filter** switches (on/off, family-safe upstream) the **Switch to Automatic when blocked** switch, all **NextDNS** switches and **Stop using NextDNS** are **not** guarded. Switching between the family filters (Cloudflare Family ↔ AdGuard Family) is free. Restrictions, Blocked apps and the Danger zone are **not** guarded. A PIN reset doesn't turn the guard off.
 
 **Which layer blocks what.** The DNS filter (Private DNS or the VPN filter) is the **main protection**. Chrome rules are an extra layer.
 
@@ -521,7 +521,8 @@ Dashboard → **Settings**:
 ### NextDNS categories
 Websites → **NextDNS categories** → *Connect NextDNS…* → Profile ID (nextdns.io → Setup, e.g. `abc123`) + API key (nextdns.io → Account → API). Then:
 - **Use NextDNS as the filter**: sets Private DNS to `abc123.dns.nextdns.io` (locked, switches to Automatic on networks that block it, like the other filters).
-- Switch categories: Adult content, Gambling, Dating, Piracy, Social networks, Online gaming, Video streaming. Plus **SafeSearch**, **YouTube restricted mode** and **Block bypass methods**. Turning anything off goes through the Filter guard.
+- Switch categories: Adult content, Gambling, Dating, Piracy, Social networks, Online gaming, Video streaming. Plus **SafeSearch**, **YouTube restricted mode** and **Block bypass methods**. These switches change your NextDNS profile instantly, on or off, with no Filter guard.
+- **Stop using NextDNS** (shown while NextDNS is the filter): pick **AdGuard Family** or **Cloudflare Family** (the one used last is listed first). The phone switches straight to it, with no guard, so it's never left unfiltered. The NextDNS key and profile stay saved; tap *Use NextDNS as the filter* to go back.
 - **Send my blocked sites to NextDNS**: copies your blocked-site list to the NextDNS denylist, so it applies in every app and in Private Space.
 
 ### Kiosk mode
@@ -818,6 +819,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-13 | **Background apps:** force stop any app; per-app "no background running" (stopped 10 s after screen off); Android Restricted mode commands + `tools\background.ps1`; Apps dialog gets "Actions…" (Force stop / Uninstall / Bloatware) and NO-BG/STOPPED tags; dashboard Play Store tile replaced by Background. |
 | 2026-11-13 | **v2.0:** Screen time (daily limits, schedules for apps and sites, temporary unlock, 7-day usage); two-factor unlock (TOTP); per-app permission control; Wi-Fi allowlist; system update policy; profile export/import; QR provisioning; NextDNS categories; GitHub Releases auto-update + `tools\release.ps1`; release build (not testOnly, same signing key); `.gitignore` for build outputs. Dashboard: Screen time + Settings tiles. |
 | 2026-11-23 | **No VPN backup:** on networks that block the filter's DNS (port 853), Private DNS now switches to **Automatic** instead of starting the VPN (many apps failed to open through it); the filter returns on other networks. Office-domain (split DNS) settings removed from the UI. Filter guard removed from the VPN filter switches. |
+| 2026-11-23 | **NextDNS:** filter guard removed from the NextDNS switches; new **Stop using NextDNS** button switches back to AdGuard Family or Cloudflare Family (last used first). |
 | 2026-11-23 | **Lock screen & branding** (Settings): organization name, lock screen message and support messages, default "Sakthivel J" (`Branding.kt`, applied from `ensureBaseline`). |
 
 © Sakthivel J

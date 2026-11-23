@@ -119,6 +119,18 @@ class WebActivity : BaseActivity() {
 
     private val FAMILY_HOSTS = setOf("family.cloudflare-dns.com", "family.adguard-dns.com")
 
+    /**
+     * Leaves NextDNS for a built-in family filter (no filter guard: the phone stays filtered).
+     * The family filter used last is offered first.
+     */
+    private fun stopNextDns() {
+        val last = Prefs.getStr(this, PrivateDns.LAST_FAMILY)?.takeIf { it in FAMILY_HOSTS } ?: "family.adguard-dns.com"
+        val options = PrivateDns.PROVIDERS.filter { it.host in FAMILY_HOSTS }.sortedBy { if (it.host == last) 0 else 1 }
+        MaterialAlertDialogBuilder(this).setTitle("Switch back to")
+            .setItems(options.map { "${it.name}: ${it.desc}" }.toTypedArray()) { _, i -> setPrivateDns(options[i].host) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
     private fun choosePrivateDns() {
         val items = PrivateDns.PROVIDERS.map { "${it.name}: ${it.desc}" } + "Custom (NextDNS, etc.)"
         MaterialAlertDialogBuilder(this).setTitle("Family-safe filter")
@@ -257,6 +269,8 @@ class WebActivity : BaseActivity() {
                     val using = Prefs.privateDnsHost(context) == NextDns.host(context)
                     text("Profile: ${NextDns.id(context)}" + if (using) " · ✅ in use" else "", 14f, bold = true)
                     if (!using) button("Use NextDNS as the filter") { setPrivateDns(NextDns.host(this@WebActivity)) }.isEnabled = owner
+                    else button("Stop using NextDNS", outlined = true) { stopNextDns() }.isEnabled = owner
+                    // NextDNS switches change the online profile directly; no filter guard (removed on request).
                     val st = nd
                     when {
                         ndError != null -> text("⚠️ $ndError", 12f, color = Palette.ORANGE)
@@ -264,17 +278,17 @@ class WebActivity : BaseActivity() {
                         else -> {
                             NextDns.CATEGORIES.forEach { (id, name) ->
                                 switchRow(name, null, st.categories[id] == true, owner) { _, on ->
-                                    guardOff("turn off NextDNS \"$name\"", on) { ndCall { NextDns.setCategory(this@WebActivity, id, on) } }
+                                    ndCall { NextDns.setCategory(this@WebActivity, id, on) }; true
                                 }
                             }
                             switchRow("SafeSearch", "Google, Bing, YouTube search", st.safeSearch, owner) { _, on ->
-                                guardOff("turn off SafeSearch", on) { ndCall { NextDns.setFlag(this@WebActivity, "safeSearch", on) } }
+                                ndCall { NextDns.setFlag(this@WebActivity, "safeSearch", on) }; true
                             }
                             switchRow("YouTube restricted mode", null, st.youtube, owner) { _, on ->
-                                guardOff("turn off YouTube restricted mode", on) { ndCall { NextDns.setFlag(this@WebActivity, "youtubeRestrictedMode", on) } }
+                                ndCall { NextDns.setFlag(this@WebActivity, "youtubeRestrictedMode", on) }; true
                             }
                             switchRow("Block bypass methods", "VPNs, proxies, other DNS", st.blockBypass, owner) { _, on ->
-                                guardOff("allow bypass methods", on) { ndCall { NextDns.setFlag(this@WebActivity, "blockBypass", on) } }
+                                ndCall { NextDns.setFlag(this@WebActivity, "blockBypass", on) }; true
                             }
                         }
                     }
