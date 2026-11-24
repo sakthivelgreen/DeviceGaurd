@@ -7,6 +7,7 @@
 DeviceGuard MDM is a single-phone Mobile Device Management app. It runs as Android **Device Owner**, which lets it control the Play Store, block or remove apps, filter websites, lock down device settings, clean up bloatware and run the phone in kiosk mode. You manage everything on the phone, behind an admin PIN; no server is needed.
 
 **Current deployment:** the phone (Android 16) · Device Owner since 2026-11-09 · see [DEVICE_INFO.md](DEVICE_INFO.md)
+**Known issues and planned fixes:** [ISSUES.md](ISSUES.md) (reference the issue ID, e.g. `B-01`, in commit messages)
 
 ---
 
@@ -558,6 +559,7 @@ Websites → **NextDNS categories** → *Connect NextDNS…* → Profile ID (nex
 MDM_App/
 ├── README.md                  ← this file
 ├── DEVICE_INFO.md             ← phone snapshot: hardware, users, accounts, apps, reset impact
+├── ISSUES.md                  ← issue tracker: bugs, security, cleanup, DRY, architecture (IDs + status)
 ├── build.gradle.kts           ← root: plugin versions (AGP, Kotlin)
 ├── settings.gradle.kts        ← repositories, module list
 ├── gradle.properties          ← JVM args, AndroidX flags
