@@ -18,7 +18,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [B-02](#b-02-suspend--hide-have-no-owner) | P1 | [ ] | Suspend / hide flags have no owner; features undo each other |
 | [B-03](#b-03-filter-guard-confirmation-not-tied-to-the-action) | P1 | [x] | Filter guard confirmation isn't tied to the action |
 | [S-02](#s-02-filter-guard-bypass-paths) | P1 | [x] | Filter guard bypass paths (profile import, Danger zone, NextDNS) |
-| [B-04](#b-04-adb-pin-reset-never-tested) | P1 | [ ] | ADB PIN reset never tested end-to-end |
+| [B-04](#b-04-adb-pin-reset-never-tested) | P1 | [x] | ADB PIN reset never tested end-to-end |
 | [S-03](#s-03-secrets-stored-in-plain-text) | P2 | [ ] | API key, GitHub token and TOTP secret stored in plain text |
 | [S-04](#s-04-weak-brute-force-protection) | P2 | [ ] | Weak brute-force protection (4-digit PIN, in-memory lockout) |
 | [B-05](#b-05-clock-changes-defeat-time-rules) | P2 | [ ] | Changing the clock defeats screen time and session timeout |
@@ -106,13 +106,15 @@ Manual "Suspended", Approval mode, Screen time, Blocklist, Allow-only-Chrome and
 `GUARD_WAIT_START` is one global value. Solve the puzzle for a small action ("unblock example.com"), wait, then trigger a bigger one ("turn off the filter guard"): the confirm dialog accepts it. Fixed: `Prefs.GUARD_WAIT_WHAT` stores the action with the start time. A different action shows "Another request is waiting" and can only cancel it, not use it.
 
 ### B-04 ADB PIN reset never tested
-**P1 · [ ]** · `PinResetReceiver.kt`, manifest (`android.permission.DUMP`)
+**P1 · [x] tested 2026-11-24: works on Android 16** · `PinResetReceiver.kt`, manifest (`android.permission.DUMP`)
 
 The ADB reset is the last way back in, and it has never been run on the phone (Android 16). Test it once:
 ```powershell
 .\platform-tools\adb.exe shell am broadcast -a com.devguard.mdm.RESET_PIN -n com.devguard.mdm/.PinResetReceiver
 ```
 Expect the result text "DeviceGuard PIN cleared…", then set a new PIN.
+
+Result 2026-11-24: broadcast returned `result=0` with the expected text; PIN hash and TOTP secret were removed; Device Owner, Private DNS and all policies stayed. The recovery code hash is kept until a new PIN is created (which makes a new code).
 
 ### B-05 Clock changes defeat time rules
 **P2 · [ ]** · `ScreenTime.kt`, `Prefs.kt` (`Session`)
