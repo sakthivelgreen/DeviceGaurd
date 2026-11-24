@@ -13,7 +13,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 
 | ID | Pri | Status | Title |
 |---|---|---|---|
-| [S-01](#s-01-release-signing-key-not-backed-up) | P1 | [~] | Signing key: keystore set up and backed up to cloud; phone install test pending |
+| [S-01](#s-01-release-signing-key-not-backed-up) | P1 | [x] | Signing key: keystore set up, backed up, install verified |
 | [B-01](#b-01-vpn-filter-blocks-all-ipv6) | P1 | [~] | VPN filter blocks all IPv6 (likely cause of apps not opening) |
 | [B-02](#b-02-suspend--hide-have-no-owner) | P1 | [ ] | Suspend / hide flags have no owner; features undo each other |
 | [B-03](#b-03-filter-guard-confirmation-not-tied-to-the-action) | P1 | [x] | Filter guard confirmation isn't tied to the action |
@@ -48,14 +48,14 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 ## Security
 
 ### S-01 Release signing key not backed up
-**P1 · [~] in progress** · `app/build.gradle.kts`, `keys/`, `keystore.properties`
+**P1 · [x] done 2026-11-24** · `app/build.gradle.kts`, `keys/`, `keystore.properties`
 
 Builds were signed with the PC's auto-generated debug keystore, stored in one place only. Losing it means the installed Device Owner app can never be updated (factory reset needed).
 
 - [x] Key moved to `keys/deviceguard.keystore` with a strong password; `keystore.properties` points to it; both git-ignored (2026-11-23)
 - [x] Debug and release builds both use it; fingerprint unchanged `E8:92:FC:E3…`
 - [x] **Uploaded `keys/deviceguard.keystore` + `keystore.properties` to a private cloud location** (2026-11-24). A second offline copy is still recommended.
-- [ ] Install-over test on the phone with the new signing config (phone was disconnected)
+- [x] Install-over test on the phone with the new signing config: `adb install -r` succeeded, Device Owner kept (2026-11-24)
 
 ### S-02 Filter guard bypass paths
 **P1 · [x] fixed 2026-11-24 (import); rest kept by decision** · `Profile.kt:49-59`, `MainActivity.kt` (Danger zone), `WebActivity.kt` (NextDNS)
