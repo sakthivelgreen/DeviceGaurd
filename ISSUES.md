@@ -82,7 +82,7 @@ The NextDNS API key, GitHub token and TOTP secret are plain SharedPreferences va
 - [x] PBKDF2-SHA256, 100,000 rounds, for PIN and recovery code; old hashes are verified once and upgraded (`pinAlgo` / `recAlgo`).
 - [x] Lockout stored in prefs, shared by PIN, recovery code and two-factor code: 5 free tries, then 30 s doubling up to 1 h. A reboot clears the wait but not the count.
 - [x] `Session` uses `SystemClock.elapsedRealtime()`.
-- [ ] Check on the phone after the next unlock: `pinAlgo` appears in prefs (old PIN hash upgraded).
+- [x] Verified on the phone after unlock (2026-11-24): `pinAlgo = pbkdf2-sha256:100000`, lockout counters 0. The recovery code is still in the old format until it's used or a new one is created (Settings → Create a new recovery code).
 
 ---
 
