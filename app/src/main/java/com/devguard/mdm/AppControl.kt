@@ -84,8 +84,17 @@ object AppControl {
     }
 
     fun setNoBackground(c: Context, pkg: String, on: Boolean) {
-        Prefs.setNoBackgroundPkgs(c, if (on) Prefs.noBackgroundPkgs(c) + pkg else Prefs.noBackgroundPkgs(c) - pkg)
+        Prefs.updateSet(c, Prefs.K_NO_BG) { if (on) it + pkg else it - pkg }
         GuardService.refresh(c)
+    }
+
+    /** Silent uninstall (Device Owner). Failures show a notification (InstallResultReceiver). */
+    fun uninstall(c: Context, pkg: String) {
+        val m = Mdm(c)
+        runCatching { if (m.isUninstallBlocked(pkg)) m.setUninstallBlocked(pkg, false) }
+        c.packageManager.packageInstaller.uninstall(
+            pkg, InstallResultReceiver.pendingIntent(c, InstallResultReceiver.UNINSTALL, pkg).intentSender,
+        )
     }
 
     // ---- Android "Restricted" background mode (ADB only) ----

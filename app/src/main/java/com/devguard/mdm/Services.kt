@@ -1,9 +1,6 @@
 // DeviceGuard MDM — Author: Sakthivel J
 package com.devguard.mdm
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -33,14 +30,10 @@ class DnsVpnService : VpnService() {
         private const val DNS_IP = "10.111.222.53"
 
         @Volatile private var blocked: Set<String> = emptySet()
-        @Volatile private var office: Set<String> = emptySet()
         @Volatile private var upstreams: List<String> = listOf("1.1.1.1", "8.8.8.8")
-        @Volatile private var dohUrl: String? = null
 
         fun reload(c: Context) {
             blocked = (Prefs.domains(c) + Prefs.stSites(c)).map { it.lowercase() }.toSet()
-            office = Prefs.officeDomains(c).map { it.lowercase() }.toSet()
-            dohUrl = null
             upstreams = if (Prefs.familyDns(c)) listOf("1.1.1.3", "1.0.0.3") else listOf("1.1.1.1", "8.8.8.8")
         }
 
@@ -60,7 +53,6 @@ class DnsVpnService : VpnService() {
 
         /** Matches the domain itself and every subdomain of a blocked entry. */
         fun isBlocked(name: String) = matches(name, blocked)
-        fun isOffice(name: String) = matches(name, office)
     }
 
     private var tun: ParcelFileDescriptor? = null
@@ -134,11 +126,7 @@ class DnsVpnService : VpnService() {
             if (len < 12) return
             val q = p.copyOfRange(ihl + 8, ihl + 8 + len)
             val (name, qEnd) = question(q) ?: return
-            val resp = when {
-                isBlocked(name) -> nxdomain(q, qEnd)
-                isOffice(name) -> forwardLocal(q) ?: return            // split DNS: office intranet names
-                else -> dohUrl?.let { doh(q, it) } ?: forward(q) ?: return
-            }
+            val resp = if (isBlocked(name)) nxdomain(q, qEnd) else forward(q) ?: return
             val pkt = wrap(p, ihl, resp)
             synchronized(out) { out.write(pkt) }
         } catch (_: Exception) {
@@ -168,40 +156,6 @@ class DnsVpnService : VpnService() {
         r[3] = 0x83.toByte()                                // RA=1, RCODE=NXDOMAIN
         put16(r, 4, 1); put16(r, 6, 0); put16(r, 8, 0); put16(r, 10, 0)
         return r
-    }
-
-    /** DNS-over-HTTPS (RFC 8484, POST application/dns-message). */
-    private fun doh(q: ByteArray, url: String): ByteArray? = runCatching {
-        val conn = java.net.URL(url).openConnection() as java.net.HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.doOutput = true
-        conn.connectTimeout = 4000
-        conn.readTimeout = 4000
-        conn.setRequestProperty("Content-Type", "application/dns-message")
-        conn.setRequestProperty("Accept", "application/dns-message")
-        conn.outputStream.use { it.write(q) }
-        if (conn.responseCode != 200) null else conn.inputStream.use { it.readBytes() }
-    }.getOrNull()
-
-    /** Sends the query to the current network's own DNS servers (office DNS), for intranet names. */
-    private fun forwardLocal(q: ByteArray): ByteArray? {
-        val cm = getSystemService(android.net.ConnectivityManager::class.java)
-        val servers = cm.activeNetwork?.let { cm.getLinkProperties(it)?.dnsServers } ?: return null
-        for (server in servers) {
-            try {
-                DatagramSocket().use { s ->
-                    protect(s)
-                    s.soTimeout = 3000
-                    s.send(DatagramPacket(q, q.size, server, 53))
-                    val rb = ByteArray(4096)
-                    val dp = DatagramPacket(rb, rb.size)
-                    s.receive(dp)
-                    return rb.copyOf(dp.length)
-                }
-            } catch (_: Exception) {
-            }
-        }
-        return null
     }
 
     private fun forward(q: ByteArray): ByteArray? {
@@ -245,7 +199,6 @@ class DnsVpnService : VpnService() {
 /** Foreground service that watches new installs (blocked apps + approved-apps mode). */
 class GuardService : Service() {
     companion object {
-        private const val CHANNEL = "guard"
         fun needed(c: Context) = Prefs.approvalMode(c) || Prefs.blockedPkgs(c).isNotEmpty() ||
             Prefs.getFlag(c, Prefs.CHROME_ONLY) || SmartDns.enabled(c) || SmartDns.fallbackActive(c) ||
             Prefs.noBackgroundPkgs(c).isNotEmpty() || ScreenTime.needed(c) || Prefs.getFlag(c, Prefs.UPD_AUTO) ||
@@ -273,14 +226,7 @@ class GuardService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "Device protection", NotificationManager.IMPORTANCE_LOW))
-        val n = Notification.Builder(this, CHANNEL)
-            .setSmallIcon(R.drawable.ic_shield)
-            .setContentTitle("DeviceGuard MDM is active")
-            .setContentText("Enforcing device policies")
-            .setOngoing(true)
-            .build()
+        val n = Notify.build(this, Channel.GUARD, "DeviceGuard MDM is active", "Enforcing device policies", ongoing = true)
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         else startForeground(1, n)
         val f = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") }
@@ -295,6 +241,10 @@ class GuardService : Service() {
         // Private DNS lock: revert any edit (vivo Settings ignores the "Lock Private DNS" restriction).
         for (key in listOf("private_dns_mode", "private_dns_specifier")) {
             contentResolver.registerContentObserver(android.provider.Settings.Global.getUriFor(key), false, dnsObserver)
+        }
+        // Automatic date & time lock while screen time is in use (B-05): switched back on the moment it's turned off.
+        for (key in listOf(android.provider.Settings.Global.AUTO_TIME, android.provider.Settings.Global.AUTO_TIME_ZONE)) {
+            contentResolver.registerContentObserver(android.provider.Settings.Global.getUriFor(key), false, timeObserver)
         }
         SmartDns.cleanup(this) // stop a backup VPN left by an older version
         PrivateDns.enforce(this)
@@ -382,17 +332,19 @@ class GuardService : Service() {
         }
     }
 
-    private fun notifyDnsLocked() {
-        val nm = getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("dnslock", "Private DNS lock", NotificationManager.IMPORTANCE_HIGH))
-        val n = Notification.Builder(this, "dnslock")
-            .setSmallIcon(R.drawable.ic_shield)
-            .setContentTitle("Private DNS is locked")
-            .setContentText("Your administrator set this filter. The change was undone.")
-            .setAutoCancel(true)
-            .build()
-        runCatching { nm.notify(42, n) }
+    private val timeObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            work.execute {
+                if (runCatching { Device.enforceAutoTime(this@GuardService) }.getOrDefault(false)) {
+                    Notify.post(this@GuardService, Channel.TIME_LOCK, 43, "Automatic date & time stays on",
+                        "Screen time needs the correct time, so automatic date & time was switched back on.")
+                }
+            }
+        }
     }
+
+    private fun notifyDnsLocked() =
+        Notify.post(this, Channel.DNS_LOCK, 42, "Private DNS is locked", "Your administrator set this filter. The change was undone.")
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (!needed(this)) { stopSelf(); return START_NOT_STICKY }
@@ -404,6 +356,7 @@ class GuardService : Service() {
     override fun onDestroy() {
         runCatching { unregisterReceiver(receiver) }
         runCatching { contentResolver.unregisterContentObserver(dnsObserver) }
+        runCatching { contentResolver.unregisterContentObserver(timeObserver) }
         runCatching { connectivity.unregisterNetworkCallback(netCallback) }
         runCatching { unregisterReceiver(screenReceiver) }
         netHandler.removeCallbacks(stopListedRunnable)

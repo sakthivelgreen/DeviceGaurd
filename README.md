@@ -162,7 +162,7 @@ Then open DeviceGuard on the phone → **Create admin PIN** → set a new PIN �
 | Works if the code is lost | ❌ | ✅ |
 | Removes protections or data | No | No |
 
-Security: the ADB reset only accepts the ADB shell (the receiver requires the `DUMP` permission), so other apps can't trigger it. Wrong PIN or recovery code 5 times → 30-second lockout.
+Security: the ADB reset only accepts the ADB shell (the receiver requires the `DUMP` permission), so other apps can't trigger it. Wrong answers: after 5 wrong answers (PIN, recovery code or two-factor code, counted together) each further wrong answer waits 30 s, 1 min, 2 min … up to 1 hour; closing the app doesn't reset it.
 | Stuck in kiosk | Long-press the kiosk title → PIN → Exit, or **E** via ADB |
 
 ---
@@ -192,7 +192,7 @@ Security: the ADB reset only accepts the ADB shell (the receiver requires the `D
 | **App updates** | Silent auto-update from GitHub Releases (`build-<versionCode>` tags). `tools\release.ps1` builds and publishes. |
 | **Kiosk mode** | Lock the phone to chosen apps (lock task mode plus a forced home screen showing app tiles). |
 | **Device actions** | Lock now, reboot, change PIN, release Device Owner, factory reset. |
-| **Self-protection** | The MDM can't be uninstalled while it is Device Owner. Admin PIN (salted, 10,000× SHA-256), 5-minute session, 30-second lockout after 5 wrong tries. |
+| **Self-protection** | The MDM can't be uninstalled while it is Device Owner. Admin PIN of 6–12 digits (salted PBKDF2-SHA256, 100,000 rounds; no all-same or in-a-row PINs), 5-minute session, growing lockout: after 5 wrong answers (PIN, recovery code or two-factor code, counted together) each further wrong answer waits 30 s, 1 min, 2 min … up to 1 hour; closing the app doesn't reset it. |
 
 ---
 
@@ -355,7 +355,7 @@ Open **DeviceGuard MDM** and enter the PIN. The session locks after 5 minutes of
 - **Forgot PIN?** (button on the lock screen):
   1. **Use my recovery code** → the PIN is cleared → create a new PIN (and you get a new recovery code).
   2. **Reset from the PC (ADB):** with USB debugging on, run `adb shell am broadcast -a com.devguard.mdm.RESET_PIN -n com.devguard.mdm/.PinResetReceiver`. Only the ADB shell can send this (the receiver is protected by the `DUMP` permission).
-- Wrong PIN or recovery code 5 times → 30-second lockout.
+- Wrong answers: after 5 wrong answers (PIN, recovery code or two-factor code, counted together) each further wrong answer waits 30 s, 1 min, 2 min … up to 1 hour; closing the app doesn't reset it.
 - Dashboard → **Settings** → Admin PIN & recovery: change PIN, create a new recovery code, PC reset help.
 - **Two-factor unlock** (Settings): after the PIN, also enter the 6-digit code from Zoho OneAuth or Google Authenticator. Turn on → scan the QR → enter one code. The recovery code and the PC reset also turn two-factor off, in case the authenticator phone is lost.
 - Resetting the PIN never turns any protection off.
@@ -498,6 +498,7 @@ Dashboard → **Screen time**. Needs Usage access (one-time, see §0 B); schedul
 - **Extra time:** tap an app → *Allow 15/30 more minutes / 1 more hour*. It runs even if a limit or schedule blocks it.
 - **Schedules:** *Add a schedule* → name, days, start and end time (overnight works, e.g. 22:00–06:00), apps to block, websites to block (comma separated). Inside the time window the apps are paused and the sites are added to the Chrome rules and VPN filter. Switch a schedule on/off, or tap *Edit* to change or delete it.
 - **Last 7 days:** total per day and the most-used apps of the week.
+- **Automatic date & time stays on** while screen time has limits or schedules: limits count by the clock, so changing the date would reset them. If it's turned off, DeviceGuard turns it back on within seconds and shows a notification.
 - Checked every minute while the screen is on, and on screen on. Apps paused by another feature (approved-apps mode) stay paused. Protected apps (launcher, keyboard, SMS, phone, core system) can't be limited.
 
 ### App permissions
@@ -601,7 +602,8 @@ MDM_App/
             ├── Prefs.kt                 SharedPreferences store, PIN + recovery-code hashing, Session (timeout/lockout)
             ├── PinResetReceiver.kt      ADB-only forgotten-PIN reset (protected by DUMP permission)
             ├── Guard.kt                 Filter guard: puzzle, maths, cooling-off wait (`Guard.require`)
-            ├── AppControl.kt            Force stop (hide/unhide), no-background list, Restricted-mode ADB commands
+            ├── AppControl.kt            Force stop (hide/unhide), silent uninstall, no-background list, Restricted-mode ADB commands
+            ├── Notify.kt                Notification channels + helper; InstallResultReceiver (uninstall/update failures)
             ├── Holds.kt                 Who wants each app paused/hidden (manual, approval, screen time, Chrome-only, blocklist); applies the combined result
             ├── ScreenTime.kt            Limits, schedules, temporary unlock, usage queries, engine (evaluate)
             ├── ScreenTimeActivity.kt    Screen time screen + schedule editor
@@ -721,7 +723,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | Brand colour | `res/values/themes.xml` (`brand`, `colorPrimary`) and `Ui.kt → Palette` |
 | Tile/card roundness | `Ui.kt`: `tileView` radius 24dp, `card` 22dp, `tabView` 18dp |
 | Grid columns | `tileGrid(…, columns = 3)` |
-| PIN timeout / lockout | `Prefs.kt → Session` (`TIMEOUT_MS`, `MAX_FAILS`, `LOCKOUT_MS`) |
+| PIN timeout / lockout | `Prefs.kt → Session` (`TIMEOUT_MS`, `FREE_TRIES`, `BASE_LOCK_MS`, `MAX_LOCK_MS`); PIN length `Prefs.PIN_MIN` / `PIN_MAX` |
 | Launcher icon | `res/drawable/ic_launcher_fg.xml`, `res/values/themes.xml → icon_bg` |
 
 ### 10.9 Version bump and release build
@@ -846,5 +848,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-23 | **Signing key:** the app's key moved to `keys\deviceguard.keystore` (in the project, git-ignored) with a strong password (same key, fingerprint `E8:92:FC:E3…`). `keystore.properties` (git-ignored) points to it; debug and release builds both use it. README §10.9 rewritten (the old advice to generate a new key would have broken updates).
 | 2026-11-24 | **Fixes from ISSUES.md:** B-01 VPN filter no longer blocks IPv6 (`allowFamily(AF_INET6)`); B-03 the filter guard's cooling-off confirms only the action that started it; S-02 importing a profile goes through the filter guard.
 | 2026-11-24 | **B-02 fixed (Holds):** features no longer undo each other's pauses/hides. Each feature has its own list; an app is released only when no feature wants it (e.g. a schedule ending no longer un-pauses an app you paused by hand). Apps/Bloatware tell you who still holds an app. One-time migration recorded existing hides (39 on this phone) as manual. Profile export/import now saves only your own pauses/hides.
+| 2026-11-24 | **Group 2 fixes:** B-05 automatic date & time kept on while screen time is in use (policy + direct write + instant revert); S-04 PIN 6–12 digits, PBKDF2 hashes (old hashes upgrade on next unlock), stored growing lockout shared by PIN, recovery and two-factor codes, session on the boot clock; B-06 uninstall/update failures now show a notification (`InstallResultReceiver`); B-08 locked read-modify-write for saved lists and screen-time data; D-01 one notification helper (`Notify.kt`); D-04 one unlock flow and credential reset; R-01/R-02 dead office-DNS/DoH code and unused helpers removed.
 
 © Sakthivel J

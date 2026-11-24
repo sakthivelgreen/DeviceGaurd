@@ -12,8 +12,39 @@ import android.net.wifi.WifiSsid
 import android.os.Build
 import java.security.MessageDigest
 
-/** Device-level policies: Wi-Fi allowlist, system updates, per-app permissions, provisioning QR. */
+/** Device-level policies: Wi-Fi allowlist, system updates, per-app permissions, provisioning QR, automatic time. */
 object Device {
+
+    // ---------- Automatic date & time (B-05) ----------
+
+    /**
+     * Screen time counts by the clock (daily limits reset at midnight, extra time ends at a set time), so moving the
+     * date forward would reset the limits. While screen time is in use, automatic (network) date, time and time zone
+     * are kept on. Called every minute by the screen-time engine and whenever the setting changes.
+     * Returns true if something had to be switched back on.
+     */
+    fun enforceAutoTime(c: Context): Boolean {
+        if (!ScreenTime.needed(c)) return false
+        val m = Mdm(c)
+        if (!m.isOwner) return false
+        val cr = c.contentResolver
+        val time = android.provider.Settings.Global.getInt(cr, android.provider.Settings.Global.AUTO_TIME, 1) == 1
+        val zone = android.provider.Settings.Global.getInt(cr, android.provider.Settings.Global.AUTO_TIME_ZONE, 1) == 1
+        if (time && zone) return false
+        @Suppress("DEPRECATION")
+        runCatching {
+            if (Build.VERSION.SDK_INT >= 30) {
+                if (!time) m.dpm.setAutoTimeEnabled(m.admin, true)
+                if (!zone) m.dpm.setAutoTimeZoneEnabled(m.admin, true)
+            } else m.dpm.setAutoTimeRequired(m.admin, true)
+        }
+        // vivo may ignore the policy (as it does for the Private DNS lock): write the settings directly as well.
+        if (PrivateDns.canWrite(c)) runCatching {
+            android.provider.Settings.Global.putInt(cr, android.provider.Settings.Global.AUTO_TIME, 1)
+            android.provider.Settings.Global.putInt(cr, android.provider.Settings.Global.AUTO_TIME_ZONE, 1)
+        }
+        return true
+    }
 
     // ---------- Wi-Fi allowlist (Android 13+) ----------
     fun wifiAllowSupported() = Build.VERSION.SDK_INT >= 33

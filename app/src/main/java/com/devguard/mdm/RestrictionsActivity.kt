@@ -9,9 +9,8 @@ class RestrictionsActivity : BaseActivity() {
         if (!isFinishing) render()
     }
 
-    /** Applies a switch change. (The filter guard is only for website filters, not restrictions.) */
-    @Suppress("UNUSED_PARAMETER")
-    private fun guardOff(what: String, on: Boolean, apply: () -> Unit): Boolean {
+    /** Applies a switch change and redraws. (The filter guard is only for website filters, not restrictions.) */
+    private fun change(apply: () -> Unit): Boolean {
         act(apply); render(); return true
     }
 
@@ -24,10 +23,10 @@ class RestrictionsActivity : BaseActivity() {
 
             card("Hardware & privacy") {
                 switchRow("Disable camera", null, owner && m.dpm.getCameraDisabled(m.admin), owner) { _, on ->
-                    guardOff("turn the camera back on", on) { m.dpm.setCameraDisabled(m.admin, on) }
+                    change { m.dpm.setCameraDisabled(m.admin, on) }
                 }
                 switchRow("Block screenshots & screen recording", null, owner && m.dpm.getScreenCaptureDisabled(m.admin), owner) { _, on ->
-                    guardOff("allow screenshots", on) { m.dpm.setScreenCaptureDisabled(m.admin, on) }
+                    change { m.dpm.setScreenCaptureDisabled(m.admin, on) }
                 }
             }
 
@@ -54,7 +53,7 @@ class RestrictionsActivity : BaseActivity() {
                 list.forEach { s ->
                     text("📶  $s", 15f).setOnClickListener {
                         confirm("Remove $s?", "The phone won't be able to join it while the allowlist is on.", "Remove") {
-                            Prefs.setWifiAllow(this@RestrictionsActivity, Prefs.wifiAllow(this@RestrictionsActivity) - s)
+                            Prefs.updateSet(this@RestrictionsActivity, Prefs.K_WIFI_ALLOW) { it - s }
                             if (Prefs.wifiAllow(this@RestrictionsActivity).isEmpty()) Prefs.setFlag(this@RestrictionsActivity, Prefs.WIFI_ALLOW_ON, false)
                             Device.applyWifiAllow(this@RestrictionsActivity); render()
                         }
@@ -62,7 +61,7 @@ class RestrictionsActivity : BaseActivity() {
                 }
                 val cur = Device.currentSsid(context)
                 if (cur != null && cur !in list) button("Add current network ($cur)", outlined = true) {
-                    Prefs.setWifiAllow(this@RestrictionsActivity, Prefs.wifiAllow(this@RestrictionsActivity) + cur)
+                    Prefs.updateSet(this@RestrictionsActivity, Prefs.K_WIFI_ALLOW) { it + cur }
                     Device.applyWifiAllow(this@RestrictionsActivity); render()
                 }.isEnabled = owner
                 if (cur == null) text("Turn on Location to see the current Wi-Fi name.", 12f).alpha = 0.6f
@@ -73,7 +72,7 @@ class RestrictionsActivity : BaseActivity() {
                         .setPositiveButton("Add") { _, _ ->
                             val n = e.text.toString().trim()
                             if (n.isNotEmpty()) {
-                                Prefs.setWifiAllow(this@RestrictionsActivity, Prefs.wifiAllow(this@RestrictionsActivity) + n)
+                                Prefs.updateSet(this@RestrictionsActivity, Prefs.K_WIFI_ALLOW) { it + n }
                                 Device.applyWifiAllow(this@RestrictionsActivity); render()
                             }
                         }.setNegativeButton("Cancel", null).show()
@@ -103,7 +102,7 @@ class RestrictionsActivity : BaseActivity() {
                                 }
                                 false
                             } else {
-                                guardOff("turn off \"${r.title}\"", on) { m.setRestriction(r.key, on) }
+                                change { m.setRestriction(r.key, on) }
                             }
                         }
                     }

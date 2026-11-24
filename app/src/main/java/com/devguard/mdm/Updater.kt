@@ -1,9 +1,7 @@
 // DeviceGuard MDM — Author: Sakthivel J
 package com.devguard.mdm
 
-import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.content.pm.PackageInstaller
 import android.os.Build
 import org.json.JSONObject
@@ -74,10 +72,8 @@ object Updater {
         val id = pi.createSession(params)
         pi.openSession(id).use { s ->
             s.openWrite("update.apk", 0, file.length()).use { out -> file.inputStream().use { it.copyTo(out) }; s.fsync(out) }
-            val result = PendingIntent.getBroadcast(
-                c, 7, Intent("com.devguard.mdm.UPDATE_RESULT").setPackage(c.packageName), PendingIntent.FLAG_IMMUTABLE,
-            )
-            s.commit(result.intentSender)
+            // A failed install shows a notification (InstallResultReceiver); success restarts the app.
+            s.commit(InstallResultReceiver.pendingIntent(c, InstallResultReceiver.UPDATE, c.packageName).intentSender)
         }
         null
     }.getOrElse { it.message ?: "Update failed" }

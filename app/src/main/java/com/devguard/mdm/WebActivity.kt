@@ -81,7 +81,7 @@ class WebActivity : BaseActivity() {
     }
 
     private fun addDomains(d: Set<String>) {
-        Prefs.setDomains(this, Prefs.domains(this) + d)
+        Prefs.updateSet(this, Prefs.K_DOMAINS) { it + d }
         onDomainsChanged(this)
         render()
     }
@@ -357,7 +357,7 @@ class WebActivity : BaseActivity() {
                 text("🚫  $d", 16f).setOnClickListener {
                     Guard.require(this@WebActivity, "unblock $d") {
                         confirm("Unblock $d?", "This site will be reachable again.", "Unblock") {
-                            Prefs.setDomains(this@WebActivity, Prefs.domains(this@WebActivity) - d)
+                            Prefs.updateSet(this@WebActivity, Prefs.K_DOMAINS) { it - d }
                             onDomainsChanged(this@WebActivity)
                             render()
                         }

@@ -101,6 +101,9 @@
             </intent-filter>
         </receiver>
 
+        <!-- Results of silent uninstalls and app updates (PackageInstaller status); reached only via our PendingIntent. -->
+        <receiver android:name=".InstallResultReceiver" android:exported="false" />
+
         <receiver android:name=".BootReceiver" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />

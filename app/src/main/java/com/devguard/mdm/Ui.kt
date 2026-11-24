@@ -438,14 +438,7 @@ fun Activity.confirm(title: String, msg: String, yes: String = "Continue", onYes
 fun Activity.askPin(onOk: () -> Unit) {
     val e = pinField()
     MaterialAlertDialogBuilder(this).setTitle("Admin PIN").setView(padded(e))
-        .setPositiveButton("OK") { _, _ ->
-            val err = Session.tryUnlock(this, e.text.toString())
-            when {
-                err != null -> toast(err)
-                Totp.enabled(this) -> { Session.lock(); totpPrompt { Session.unlockNow(); onOk() } }
-                else -> onOk()
-            }
-        }
+        .setPositiveButton("OK") { _, _ -> unlockWithPin(e.text.toString(), onOk) }
         .setNegativeButton("Cancel", null).show()
 }
 

@@ -44,7 +44,7 @@ class MainActivity : AppCompatActivity() {
         addView(box, LinearLayout.LayoutParams(dp(88), dp(88)).apply { bottomMargin = dp(20) })
         text(if (setup) "Create admin PIN" else "DeviceGuard MDM", 24f, bold = true).gravity = Gravity.CENTER
         text(
-            if (setup) "4–12 digits. Every setting is protected by it." else "This device is managed. Enter the admin PIN.",
+            if (setup) "${Prefs.PIN_MIN}–${Prefs.PIN_MAX} digits. Every setting is protected by it." else "This device is managed. Enter the admin PIN.",
             14f,
         ).apply { gravity = Gravity.CENTER; alpha = 0.7f }
 
@@ -55,23 +55,12 @@ class MainActivity : AppCompatActivity() {
             button(if (setup) "Save PIN" else "Unlock") {
                 val a = p1.text.toString()
                 if (setup) {
-                    when {
-                        a.length !in 4..12 -> toast("PIN must be 4–12 digits")
-                        a != p2!!.text.toString() -> toast("PINs don't match")
-                        else -> {
-                            Prefs.setPin(this@MainActivity, a); Session.unlockNow()
-                            showRecoveryCode(Prefs.newRecoveryCode(this@MainActivity)) { render() }
-                        }
+                    val problem = Prefs.pinProblem(a, p2!!.text.toString())
+                    if (problem != null) toast(problem) else {
+                        Prefs.setPin(this@MainActivity, a); Session.unlockNow()
+                        showRecoveryCodeDialog(Prefs.newRecoveryCode(this@MainActivity)) { render() }
                     }
-                } else {
-                    val err = Session.tryUnlock(this@MainActivity, a)
-                    when {
-                        err != null -> { toast(err); p1.text.clear() }
-                        // Two-factor: PIN alone isn't enough; ask for the authenticator code.
-                        Totp.enabled(this@MainActivity) -> { Session.lock(); totpPrompt { Session.unlockNow(); render() } }
-                        else -> render()
-                    }
-                }
+                } else if (!unlockWithPin(a) { render() }) p1.text.clear()
             }
             if (!setup) button("Forgot PIN?", outlined = true) { forgotPin() }
         }
@@ -80,19 +69,17 @@ class MainActivity : AppCompatActivity() {
 
     // ------------------------------------------------------- PIN recovery
 
-    private fun showRecoveryCode(code: String, then: () -> Unit) = showRecoveryCodeDialog(code, then)
-
     private fun forgotPin() {
         MaterialAlertDialogBuilder(this).setTitle("Forgot PIN?")
             .setItems(arrayOf("Use my recovery code", "Reset from the PC (ADB)")) { _, i ->
-                if (i == 0) recoverWithCode() else pcResetHelp()
+                if (i == 0) recoverWithCode() else pcResetHelpDialog()
             }.show()
     }
 
     private fun recoverWithCode() {
         if (!Prefs.hasRecovery(this)) {
             toast("No recovery code was set up. Use the PC reset instead.")
-            pcResetHelp(); return
+            pcResetHelpDialog(); return
         }
         val e = EditText(this).apply {
             hint = "XXXX-XXXX-XXXX-XXXX"
@@ -103,16 +90,13 @@ class MainActivity : AppCompatActivity() {
             .setPositiveButton("Reset PIN") { _, _ ->
                 val err = Session.tryRecovery(this, e.text.toString())
                 if (err == null) {
-                    Prefs.clearPin(this)
-                    Totp.disable(this) // the recovery code also resets the authenticator lock
+                    Session.resetCredentials(this) // PIN + authenticator lock removed
                     toast("Recovery code accepted. Create a new PIN.")
                     render()
                 } else toast(err)
             }
             .setNegativeButton("Cancel", null).show()
     }
-
-    private fun pcResetHelp() = pcResetHelpDialog()
 
     // ---------------------------------------------------------- dashboard
 
@@ -146,7 +130,7 @@ class MainActivity : AppCompatActivity() {
             if (!Prefs.hasRecovery(context)) card {
                 text("🔑 No recovery code yet", 15f, bold = true, color = Palette.ORANGE)
                 text("If you forget the PIN, a recovery code lets you reset it on the phone. Create one now and keep it safe.", 13f)
-                button("Create recovery code") { showRecoveryCode(Prefs.newRecoveryCode(this@MainActivity)) { render() } }
+                button("Create recovery code") { showRecoveryCodeDialog(Prefs.newRecoveryCode(this@MainActivity)) { render() } }
             }
             if (!m.isOwner) card {
                 text("Make this app Device Owner from a PC (the phone must have no accounts):", 13f)

@@ -39,19 +39,30 @@ fun Activity.pcResetHelpDialog() {
 
 fun Activity.changePinDialog() {
     val col = column()
-    val p1 = pinField("New PIN")
+    val p1 = pinField("New PIN (${Prefs.PIN_MIN}–${Prefs.PIN_MAX} digits)")
     val p2 = pinField("Confirm PIN")
     col.addView(p1); col.addView(p2)
     MaterialAlertDialogBuilder(this).setTitle("Change admin PIN").setView(col)
         .setPositiveButton("Save") { _, _ ->
             val a = p1.text.toString()
-            when {
-                a.length !in 4..12 -> toast("PIN must be 4–12 digits")
-                a != p2.text.toString() -> toast("PINs don't match")
-                else -> { Prefs.setPin(this, a); toast("PIN changed") }
-            }
+            val problem = Prefs.pinProblem(a, p2.text.toString())
+            if (problem != null) toast(problem) else { Prefs.setPin(this, a); toast("PIN changed") }
         }
         .setNegativeButton("Cancel", null).show()
+}
+
+/**
+ * The one admin unlock flow (D-04): PIN with lockout, then the two-factor code when it's on, then [onOk].
+ * Shows errors itself. Returns false if the PIN was wrong (so the caller can clear the field).
+ */
+fun Activity.unlockWithPin(pin: String, onOk: () -> Unit): Boolean {
+    val err = Session.tryUnlock(this, pin)
+    if (err != null) { toast(err); return false }
+    if (Totp.enabled(this)) {
+        Session.lock() // the PIN alone isn't enough
+        totpPrompt { Session.unlockNow(); onOk() }
+    } else onOk()
+    return true
 }
 
 /** Second unlock step when two-factor is on: asks for the 6-digit authenticator code. */
@@ -66,7 +77,8 @@ fun Activity.totpPrompt(onOk: () -> Unit) {
         .setMessage("Open Zoho OneAuth / Google Authenticator and enter the DeviceGuard code.")
         .setView(padded(e))
         .setPositiveButton("Unlock") { _, _ ->
-            if (Totp.verify(this, e.text.toString())) onOk() else toast("Wrong code")
+            val err = Session.tryTotp(this, e.text.toString()) // same lockout as the PIN
+            if (err == null) onOk() else toast(err)
         }
         .setNegativeButton("Cancel", null).show()
 }

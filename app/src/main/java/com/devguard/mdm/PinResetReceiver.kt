@@ -16,9 +16,8 @@ import android.content.Intent
 class PinResetReceiver : BroadcastReceiver() {
     override fun onReceive(c: Context, i: Intent) {
         if (i.action != ACTION) return
-        Prefs.clearPin(c)
-        Totp.disable(c) // also clear the authenticator lock (phone with the authenticator may be lost)
-        Session.lock()
+        // PIN + authenticator lock (the authenticator phone may be lost) removed, wrong-attempt lockout cleared.
+        Session.resetCredentials(c)
         resultData = "DeviceGuard PIN cleared (and two-factor turned off). Open the app on the phone to create a new PIN."
     }
 

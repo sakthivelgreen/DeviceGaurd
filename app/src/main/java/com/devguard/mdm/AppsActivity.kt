@@ -239,10 +239,7 @@ class AppsActivity : BaseActivity() {
 
     /** Silent uninstall (Device Owner only). */
     private fun uninstall(a: AppItem) = act {
-        if (m.isUninstallBlocked(a.pkg)) m.setUninstallBlocked(a.pkg, false)
-        val intent = android.content.Intent("com.devguard.mdm.UNINSTALL_RESULT").setPackage(packageName)
-        val pi = android.app.PendingIntent.getBroadcast(this, a.pkg.hashCode(), intent, android.app.PendingIntent.FLAG_IMMUTABLE)
-        packageManager.packageInstaller.uninstall(a.pkg, pi.intentSender)
+        AppControl.uninstall(this, a.pkg) // a failure shows a notification
         toast("Uninstalling ${a.label}…")
         android.os.Handler(mainLooper).postDelayed({ load() }, 2500)
     }
@@ -261,8 +258,7 @@ class AppsActivity : BaseActivity() {
             if (cur[2] != next[2]) m.setUninstallBlocked(a.pkg, next[2])
             if (cur[3] != next[3]) { if (next[3]) Approval.approve(this, a.pkg) else Approval.unapprove(this, a.pkg) }
             if (cur[4] != next[4]) {
-                val k = Prefs.kioskPkgs(this)
-                Prefs.setKioskPkgs(this, if (next[4]) k + a.pkg else k - a.pkg)
+                Prefs.updateSet(this, Prefs.K_KIOSK_PKGS) { if (next[4]) it + a.pkg else it - a.pkg }
             }
             if (cur[5] != next[5]) {
                 val reason = if (next[5]) AppControl.protectedReason(this, a.pkg) else null

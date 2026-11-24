@@ -2,9 +2,6 @@
 package com.devguard.mdm
 
 import android.app.Activity
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
@@ -20,11 +17,11 @@ import android.os.Bundle
 object WebFilter {
     const val VPN_CONSENT_REQUEST = 77
 
-    /** Returns true if blocking is running now; false if waiting for VPN consent. */
     /**
      * Starts the VPN filter. Nothing else changes until the VPN can really start:
      * if VPN permission is needed, [finishEnable] runs only after the user allows it,
      * so a cancelled prompt never leaves the phone with no filter at all.
+     * Returns true if blocking is running now; false if waiting for VPN consent.
      */
     fun enable(a: Activity): Boolean {
         val m = Mdm(a)
@@ -210,10 +207,6 @@ object PrivateDns {
         }.getOrNull()
     }
 
-    /** ADB commands that set Private DNS phone-wide (works even when the app is blocked by an unaffiliated user). */
-    fun adbCommand(host: String) =
-        "adb shell settings put global private_dns_mode hostname; adb shell settings put global private_dns_specifier $host"
-
     const val ADB_OFF = "adb shell settings put global private_dns_mode opportunistic"
 
     /**
@@ -302,15 +295,6 @@ object SmartDns {
         else -> emptyList()
     }
 
-    /** Same filter over HTTPS (port 443). */
-    fun dohUrl(host: String): String = when {
-        host.endsWith(".dns.nextdns.io") -> "https://dns.nextdns.io/" + host.removeSuffix(".dns.nextdns.io")
-        else -> "https://$host/dns-query"
-    }
-
-    /** Plain-DNS backup for the same filter (only providers whose filtering works on port 53 without a profile). */
-    fun plainBackup(host: String): List<String> = if (host.endsWith(".dns.nextdns.io")) emptyList() else bootstrap(host)
-
     private fun networkKey(cm: android.net.ConnectivityManager, n: android.net.Network): String? {
         val caps = cm.getNetworkCapabilities(n) ?: return null
         val lp = cm.getLinkProperties(n) ?: return null
@@ -367,10 +351,10 @@ object SmartDns {
 
         // One retry after 2 s, so a single dropped handshake doesn't switch the filter off.
         if (dotReachable(host, n) || (!fallbackActive(c) && run { Thread.sleep(2000); dotReachable(host, n) })) {
-            Prefs.setDnsBlockedNets(c, Prefs.dnsBlockedNets(c) - key)
+            Prefs.updateSet(c, Prefs.K_DNS_BLOCKED_NETS) { it - key }
             if (fallbackActive(c)) exitFallback(c)
         } else {
-            Prefs.setDnsBlockedNets(c, Prefs.dnsBlockedNets(c) + key)
+            Prefs.updateSet(c, Prefs.K_DNS_BLOCKED_NETS) { it + key }
             if (!fallbackActive(c)) enterFallback(c)
         }
     }
@@ -396,22 +380,18 @@ object SmartDns {
     fun enterFallback(c: Context) {
         Prefs.setFlag(c, Prefs.DNS_FALLBACK, true)
         PrivateDns.write(c, null)
-        val nm = c.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("smartdns", "Network filter", NotificationManager.IMPORTANCE_LOW))
-        val n = Notification.Builder(c, "smartdns")
-            .setSmallIcon(R.drawable.ic_shield)
-            .setContentTitle("Private DNS on Automatic")
-            .setContentText("The filter's DNS can't be reached right now. It's re-checked every few minutes and comes back on its own.")
-            .setOngoing(true)
-            .build()
-        runCatching { nm.notify(NOTIFY_ID, n) }
+        Notify.post(
+            c, Channel.NETWORK, NOTIFY_ID, "Private DNS on Automatic",
+            "The filter's DNS can't be reached right now. It's re-checked every few minutes and comes back on its own.",
+            ongoing = true,
+        )
     }
 
     fun exitFallback(c: Context) {
         Prefs.setFlag(c, Prefs.DNS_FALLBACK, false)
         Prefs.privateDnsHost(c)?.let { PrivateDns.write(c, it) } // filter back on Private DNS
         cleanup(c)
-        runCatching { c.getSystemService(NotificationManager::class.java).cancel(NOTIFY_ID) }
+        Notify.cancel(c, NOTIFY_ID)
     }
 
     /** Leave backup mode without touching Private DNS (caller sets it) and force a fresh check. */
@@ -420,7 +400,7 @@ object SmartDns {
         if (!fallbackActive(c)) return
         Prefs.setFlag(c, Prefs.DNS_FALLBACK, false)
         cleanup(c)
-        runCatching { c.getSystemService(NotificationManager::class.java).cancel(NOTIFY_ID) }
+        Notify.cancel(c, NOTIFY_ID)
     }
 
     /** Turn the automatic backup on/off from the UI. */
@@ -431,7 +411,7 @@ object SmartDns {
         GuardService.refresh(c)
     }
 
-    fun forgetNetworks(c: Context) { Prefs.setDnsBlockedNets(c, emptySet()); lastKey = null }
+    fun forgetNetworks(c: Context) { Prefs.setSet(c, Prefs.K_DNS_BLOCKED_NETS, emptySet()); lastKey = null }
 }
 
 /** Website rules enforced inside Chrome through its managed (enterprise) policies. No VPN needed. */
@@ -499,14 +479,8 @@ object ChromePolicy {
     fun onInstalled(c: Context, pkg: String): Boolean {
         if (!Prefs.getFlag(c, Prefs.CHROME_ONLY) || !isBrowser(c, pkg)) return false
         if (!Holds.set(c, Hold.HIDE_CHROME_ONLY, pkg, true)) return false
-        val nm = c.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("blocked", "Blocked apps", NotificationManager.IMPORTANCE_HIGH))
-        val n = Notification.Builder(c, "blocked")
-            .setSmallIcon(R.drawable.ic_shield)
-            .setContentTitle("${Blocklist.label(c, pkg)} is not allowed")
-            .setContentText("Only Chrome can be used as a browser on this phone.")
-            .build()
-        runCatching { nm.notify(("brw$pkg").hashCode(), n) }
+        Notify.post(c, Channel.BLOCKED, ("brw$pkg").hashCode(), "${Blocklist.label(c, pkg)} is not allowed",
+            "Only Chrome can be used as a browser on this phone.")
         return true
     }
 }
@@ -567,8 +541,6 @@ object Kiosk {
  * it is uninstalled silently right away. System apps that can't be uninstalled are hidden.
  */
 object Blocklist {
-    private const val CHANNEL = "blocked"
-
     /** Well-known apps for quick add: package -> name. */
     val PRESETS = linkedMapOf(
         "com.instagram.android" to "Instagram",
@@ -600,13 +572,13 @@ object Blocklist {
     }.getOrDefault(pkg)
 
     fun add(c: Context, pkgs: Collection<String>) {
-        Prefs.setBlockedPkgs(c, Prefs.blockedPkgs(c) + pkgs)
+        Prefs.updateSet(c, Prefs.K_BLOCKED_PKGS) { it + pkgs }
         GuardService.refresh(c)
         pkgs.forEach { if (isInstalled(c, it)) remove(c, it, notify = false) }
     }
 
     fun unblock(c: Context, pkg: String) {
-        Prefs.setBlockedPkgs(c, Prefs.blockedPkgs(c) - pkg)
+        Prefs.updateSet(c, Prefs.K_BLOCKED_PKGS) { it - pkg }
         // If it was a system app we hid, drop Blocked apps' claim (it stays hidden if you hid it too).
         Holds.set(c, Hold.HIDE_BLOCKLIST, pkg, false)
         GuardService.refresh(c)
@@ -631,37 +603,21 @@ object Blocklist {
         if (system) {
             Holds.set(c, Hold.HIDE_BLOCKLIST, pkg, true)
         } else {
-            runCatching { if (m.isUninstallBlocked(pkg)) m.setUninstallBlocked(pkg, false) }
-            val pi = android.app.PendingIntent.getBroadcast(
-                c, pkg.hashCode(),
-                Intent("com.devguard.mdm.UNINSTALL_RESULT").setPackage(c.packageName),
-                android.app.PendingIntent.FLAG_IMMUTABLE,
-            )
-            runCatching { c.packageManager.packageInstaller.uninstall(pkg, pi.intentSender) }
+            runCatching { AppControl.uninstall(c, pkg) } // a failure shows its own notification
         }
-        if (notify) {
-            val nm = c.getSystemService(NotificationManager::class.java)
-            nm.createNotificationChannel(NotificationChannel(CHANNEL, "Blocked apps", NotificationManager.IMPORTANCE_HIGH))
-            val n = Notification.Builder(c, CHANNEL)
-                .setSmallIcon(R.drawable.ic_shield)
-                .setContentTitle("$name is not allowed")
-                .setContentText("This app is blocked by your administrator and was removed.")
-                .build()
-            runCatching { nm.notify(("blk$pkg").hashCode(), n) }
-        }
+        if (notify) Notify.post(c, Channel.BLOCKED, ("blk$pkg").hashCode(), "$name is not allowed",
+            "This app is blocked by your administrator and was removed.")
     }
 }
 
 /** Approved-apps mode: newly installed apps stay paused until the admin approves them. */
 object Approval {
-    private const val CHANNEL = "approvals"
-
     private fun installed(c: Context) =
         c.packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).map { it.packageName }.toSet()
 
     fun enable(c: Context) {
         // Everything already on the phone counts as approved.
-        Prefs.setApproved(c, Prefs.approved(c) + installed(c))
+        Prefs.updateSet(c, Prefs.K_APPROVED) { it + installed(c) }
         Prefs.setApprovalMode(c, true)
         GuardService.refresh(c)
     }
@@ -680,12 +636,12 @@ object Approval {
     }
 
     fun approve(c: Context, pkg: String) {
-        Prefs.setApproved(c, Prefs.approved(c) + pkg)
+        Prefs.updateSet(c, Prefs.K_APPROVED) { it + pkg }
         if (pkg in Prefs.autoSuspended(c)) Holds.set(c, Hold.SUSPEND_APPROVAL, pkg, false)
     }
 
     fun unapprove(c: Context, pkg: String) {
-        Prefs.setApproved(c, Prefs.approved(c) - pkg)
+        Prefs.updateSet(c, Prefs.K_APPROVED) { it - pkg }
         if (Prefs.approvalMode(c)) pause(c, pkg)
     }
 
@@ -705,17 +661,6 @@ object Approval {
             .forEach { pause(c, it.packageName) }
     }
 
-    private fun notifyPaused(c: Context, pkg: String) {
-        val nm = c.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CHANNEL, "App approvals", NotificationManager.IMPORTANCE_DEFAULT))
-        val label = runCatching {
-            c.packageManager.getApplicationLabel(c.packageManager.getApplicationInfo(pkg, 0)).toString()
-        }.getOrDefault(pkg)
-        val n = Notification.Builder(c, CHANNEL)
-            .setSmallIcon(R.drawable.ic_shield)
-            .setContentTitle("$label is paused")
-            .setContentText("New apps need administrator approval.")
-            .build()
-        runCatching { nm.notify(pkg.hashCode(), n) }
-    }
+    private fun notifyPaused(c: Context, pkg: String) =
+        Notify.post(c, Channel.APPROVALS, pkg.hashCode(), "${Blocklist.label(c, pkg)} is paused", "New apps need administrator approval.")
 }

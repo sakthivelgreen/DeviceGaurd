@@ -2,9 +2,6 @@
 package com.devguard.mdm
 
 import android.app.AppOpsManager
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.usage.UsageEvents
 import android.app.usage.UsageStatsManager
 import android.content.Context
@@ -51,6 +48,7 @@ object ScreenTime {
         return o.keys().asSequence().associateWith { o.getInt(it) }
     }
 
+    @Synchronized // B-08: same lock as evaluate(), so JSON read-modify-writes can't overwrite each other
     fun setLimit(c: Context, pkg: String, minutes: Int?) {
         val o = JSONObject(limits(c).toMutableMap().apply { if (minutes == null) remove(pkg) else put(pkg, minutes) } as Map<*, *>)
         Prefs.setStr(c, Prefs.ST_LIMITS, o.toString())
@@ -62,12 +60,14 @@ object ScreenTime {
         return (0 until a.length()).mapNotNull { runCatching { Schedule.from(a.getJSONObject(it)) }.getOrNull() }
     }
 
+    @Synchronized
     fun saveSchedule(c: Context, s: Schedule) {
         val list = schedules(c).filter { it.id != s.id } + s
         Prefs.setStr(c, Prefs.ST_SCHEDULES, JSONArray(list.map { it.toJson() }).toString())
         GuardService.refresh(c)
     }
 
+    @Synchronized
     fun deleteSchedule(c: Context, id: String) {
         Prefs.setStr(c, Prefs.ST_SCHEDULES, JSONArray(schedules(c).filter { it.id != id }.map { it.toJson() }).toString())
     }
@@ -78,6 +78,7 @@ object ScreenTime {
     }
 
     /** Lets [pkg] run for [minutes] even if a limit or schedule blocks it. */
+    @Synchronized
     fun allowFor(c: Context, pkg: String, minutes: Int) {
         val m = tempAllow(c).apply { put(pkg, System.currentTimeMillis() + minutes * 60_000L) }
         Prefs.setStr(c, Prefs.ST_TEMP_ALLOW, JSONObject(m as Map<*, *>).toString())
@@ -144,13 +145,12 @@ object ScreenTime {
         else ((s.days and today) != 0 && minute >= s.start) || ((s.days and yesterday) != 0 && minute < s.end)
     }
 
-    fun activeSites(c: Context): Set<String> = Prefs.stSites(c)
-
     // ---------- engine ----------
     @Synchronized
     fun evaluate(c: Context) {
         val m = Mdm(c)
         if (!m.isOwner) return
+        runCatching { Device.enforceAutoTime(c) } // B-05: limits count by the clock, so keep network time on
         val now = System.currentTimeMillis()
 
         // Prune expired temporary unlocks.
@@ -189,17 +189,8 @@ object ScreenTime {
         }
     }
 
-    private fun notify(c: Context, pkg: String, why: String) {
-        val nm = c.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel("screentime", "Screen time", NotificationManager.IMPORTANCE_DEFAULT))
-        val n = Notification.Builder(c, "screentime")
-            .setSmallIcon(R.drawable.ic_shield)
-            .setContentTitle("${Blocklist.label(c, pkg)} is paused")
-            .setContentText("Screen time: $why.")
-            .setAutoCancel(true)
-            .build()
-        runCatching { nm.notify(("st$pkg").hashCode(), n) }
-    }
+    private fun notify(c: Context, pkg: String, why: String) =
+        Notify.post(c, Channel.SCREEN_TIME, ("st$pkg").hashCode(), "${Blocklist.label(c, pkg)} is paused", "Screen time: $why.")
 
     fun fmt(ms: Long): String {
         val min = ms / 60_000

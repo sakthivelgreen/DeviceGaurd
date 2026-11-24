@@ -12,7 +12,7 @@ import org.json.JSONObject
  */
 object Profile {
     private val SECRET_KEYS = setOf(
-        "pinHash", "pinSalt", "recHash", "recSalt", Prefs.TOTP_SECRET, Prefs.UPD_TOKEN, Prefs.NEXTDNS_KEY,
+        "pinHash", "pinSalt", "pinAlgo", "recHash", "recSalt", "recAlgo", *Session.STATE_KEYS.toTypedArray(), Prefs.TOTP_SECRET, Prefs.UPD_TOKEN, Prefs.NEXTDNS_KEY,
         Prefs.GUARD_WAIT_START, Prefs.GUARD_WAIT_WHAT, Prefs.BG_LAST_RUN, Prefs.BG_LAST_COUNT, Prefs.DNS_FALLBACK, Prefs.UPD_LAST,
         "stSites", "dnsBlockedNets", Prefs.ST_TEMP_ALLOW, "holdsV1",
         // Holds lists: feature-owned ones are rebuilt by their feature; manual ones go in device.hidden/suspended.
