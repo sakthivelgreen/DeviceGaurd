@@ -13,7 +13,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 
 | ID | Pri | Status | Title |
 |---|---|---|---|
-| [S-01](#s-01-release-signing-key-not-backed-up) | P1 | [~] | Signing key: dedicated keystore set up, cloud backup pending |
+| [S-01](#s-01-release-signing-key-not-backed-up) | P1 | [~] | Signing key: keystore set up and backed up to cloud; phone install test pending |
 | [B-01](#b-01-vpn-filter-blocks-all-ipv6) | P1 | [ ] | VPN filter blocks all IPv6 (likely cause of apps not opening) |
 | [B-02](#b-02-suspend--hide-have-no-owner) | P1 | [ ] | Suspend / hide flags have no owner; features undo each other |
 | [B-03](#b-03-filter-guard-confirmation-not-tied-to-the-action) | P1 | [ ] | Filter guard confirmation isn't tied to the action |
@@ -54,7 +54,7 @@ Builds were signed with the PC's auto-generated debug keystore, stored in one pl
 
 - [x] Key moved to `keys/deviceguard.keystore` with a strong password; `keystore.properties` points to it; both git-ignored (2026-11-23)
 - [x] Debug and release builds both use it; fingerprint unchanged `E8:92:FC:E3…`
-- [ ] **Upload `keys/deviceguard.keystore` + `keystore.properties` to a private cloud location** (and ideally a second offline copy)
+- [x] **Uploaded `keys/deviceguard.keystore` + `keystore.properties` to a private cloud location** (2026-11-24). A second offline copy is still recommended.
 - [ ] Install-over test on the phone with the new signing config (phone was disconnected)
 
 ### S-02 Filter guard bypass paths
@@ -245,4 +245,5 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 
 | ID | Date | Commit | Note |
 |---|---|---|---|
-| S-01 (part) | 2026-11-23 | `50a3593`, `b24fdd3` | Dedicated keystore in `keys/` with strong password; backup still pending |
+| S-01 (part) | 2026-11-23 | `50a3593`, `b24fdd3` | Dedicated keystore in `keys/` with strong password |
+| S-01 (part) | 2026-11-24 | — | Keystore + `keystore.properties` uploaded to private cloud storage |
