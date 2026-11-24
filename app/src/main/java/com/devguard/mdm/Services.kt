@@ -88,6 +88,9 @@ class DnsVpnService : VpnService() {
             .addRoute(DNS_IP, 32)
             .addDnsServer(DNS_IP)
             .setBlocking(true)
+            // B-01: without this Android adds "::/0 unreachable" and blocks ALL IPv6 for every app (only DNS
+            // should go through the tunnel). IPv6-first networks (Airtel/Jio) then broke many apps.
+            .allowFamily(android.system.OsConstants.AF_INET6)
         // DeviceGuard's own traffic (DoH lookups, network checks) goes straight out, not into its own filter.
         runCatching { b.addDisallowedApplication(packageName) }
         val pfd = b.establish() ?: return

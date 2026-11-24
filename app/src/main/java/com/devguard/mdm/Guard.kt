@@ -37,6 +37,21 @@ object Guard {
         val start = Prefs.getLong(a, Prefs.GUARD_WAIT_START)
         val delay = delayMs(a)
         val waited = now - start
+        // B-03: a waiting request belongs to ONE action. Solving the puzzle for a small action must not
+        // unlock a bigger one, so a different action can't use (or replace) the pending request.
+        val pending = delay > 0 && start > 0 && waited in 0..(delay + WINDOW_MS)
+        val pendingWhat = Prefs.getStr(a, Prefs.GUARD_WAIT_WHAT)
+        if (pending && pendingWhat != what) {
+            MaterialAlertDialogBuilder(a).setTitle("Another request is waiting")
+                .setMessage(
+                    "You already asked to ${pendingWhat ?: "change a filter"}. Only that action can be confirmed after its wait.\n\n" +
+                        "To do this instead, cancel that request and start again (puzzle and wait).",
+                )
+                .setPositiveButton("Keep waiting", null)
+                .setNegativeButton("Cancel that request") { _, _ -> clear(a) }
+                .show()
+            return
+        }
         when {
             // Wait finished and still inside the confirm window: final confirmation.
             delay > 0 && start > 0 && waited in delay..(delay + WINDOW_MS) -> {
@@ -61,6 +76,7 @@ object Guard {
                 puzzle(a, what) {
                     if (delay == 0L) onPass()
                     else {
+                        Prefs.setStr(a, Prefs.GUARD_WAIT_WHAT, what) // the only action this wait can confirm
                         Prefs.setLong(a, Prefs.GUARD_WAIT_START, SystemClock.elapsedRealtime())
                         MaterialAlertDialogBuilder(a).setTitle("Puzzle solved")
                             .setMessage("Now wait ${delayMin(a)} minutes. Then repeat the same action within 10 minutes to confirm. After that the request expires.")
@@ -71,7 +87,10 @@ object Guard {
         }
     }
 
-    private fun clear(c: Context) = Prefs.setLong(c, Prefs.GUARD_WAIT_START, 0L)
+    private fun clear(c: Context) {
+        Prefs.setLong(c, Prefs.GUARD_WAIT_START, 0L)
+        Prefs.setStr(c, Prefs.GUARD_WAIT_WHAT, null)
+    }
 
     private val rnd = SecureRandom()
     private const val CHARS = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789"

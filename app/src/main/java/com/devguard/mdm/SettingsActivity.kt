@@ -27,12 +27,16 @@ class SettingsActivity : BaseActivity() {
         if (uri != null) {
             val text = runCatching { contentResolver.openInputStream(uri)?.bufferedReader()?.readText() }.getOrNull()
             if (text == null) { toast("Couldn't read the file"); return@registerForActivityResult }
-            confirm("Import this profile?", "Its restrictions, filters, lists and schedules replace the current ones. Your PIN stays the same.", "Import") {
-                toast("Importing…")
-                Thread {
-                    val msg = runCatching { Profile.import(this, text) }.getOrElse { it.message ?: "Import failed" }
-                    runOnUiThread { toast(msg); if (!isFinishing) render() }
-                }.start()
+            // S-02: a profile can turn the filter guard off and replace the website filters, so importing
+            // goes through the filter guard (when it's on), like any other way of weakening the filters.
+            Guard.require(this, "import a profile (it can change or turn off your website filters)") {
+                confirm("Import this profile?", "Its restrictions, filters, lists and schedules replace the current ones. Your PIN stays the same.", "Import") {
+                    toast("Importing…")
+                    Thread {
+                        val msg = runCatching { Profile.import(this, text) }.getOrElse { it.message ?: "Import failed" }
+                        runOnUiThread { toast(msg); if (!isFinishing) render() }
+                    }.start()
+                }
             }
         }
     }

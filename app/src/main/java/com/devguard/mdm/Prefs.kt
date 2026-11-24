@@ -125,6 +125,7 @@ object Prefs {
     const val GUARD_ON = "guardOn"
     const val GUARD_DELAY = "guardDelayMin"
     const val GUARD_WAIT_START = "guardWaitStart"
+    const val GUARD_WAIT_WHAT = "guardWaitWhat"   // the action the pending wait belongs to (B-03)
     fun getInt(c: Context, k: String, def: Int) = p(c).getInt(k, def)
     fun setInt(c: Context, k: String, v: Int) = p(c).edit().putInt(k, v).commit()
     fun getLong(c: Context, k: String) = p(c).getLong(k, 0L)

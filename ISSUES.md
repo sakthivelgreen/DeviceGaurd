@@ -14,10 +14,10 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | ID | Pri | Status | Title |
 |---|---|---|---|
 | [S-01](#s-01-release-signing-key-not-backed-up) | P1 | [~] | Signing key: keystore set up and backed up to cloud; phone install test pending |
-| [B-01](#b-01-vpn-filter-blocks-all-ipv6) | P1 | [ ] | VPN filter blocks all IPv6 (likely cause of apps not opening) |
+| [B-01](#b-01-vpn-filter-blocks-all-ipv6) | P1 | [~] | VPN filter blocks all IPv6 (likely cause of apps not opening) |
 | [B-02](#b-02-suspend--hide-have-no-owner) | P1 | [ ] | Suspend / hide flags have no owner; features undo each other |
-| [B-03](#b-03-filter-guard-confirmation-not-tied-to-the-action) | P1 | [ ] | Filter guard confirmation isn't tied to the action |
-| [S-02](#s-02-filter-guard-bypass-paths) | P1 | [ ] | Filter guard bypass paths (profile import, Danger zone, NextDNS) |
+| [B-03](#b-03-filter-guard-confirmation-not-tied-to-the-action) | P1 | [x] | Filter guard confirmation isn't tied to the action |
+| [S-02](#s-02-filter-guard-bypass-paths) | P1 | [x] | Filter guard bypass paths (profile import, Danger zone, NextDNS) |
 | [B-04](#b-04-adb-pin-reset-never-tested) | P1 | [ ] | ADB PIN reset never tested end-to-end |
 | [S-03](#s-03-secrets-stored-in-plain-text) | P2 | [ ] | API key, GitHub token and TOTP secret stored in plain text |
 | [S-04](#s-04-weak-brute-force-protection) | P2 | [ ] | Weak brute-force protection (4-digit PIN, in-memory lockout) |
@@ -58,7 +58,7 @@ Builds were signed with the PC's auto-generated debug keystore, stored in one pl
 - [ ] Install-over test on the phone with the new signing config (phone was disconnected)
 
 ### S-02 Filter guard bypass paths
-**P1 · [ ]** · `Profile.kt:49-59`, `MainActivity.kt` (Danger zone), `WebActivity.kt` (NextDNS)
+**P1 · [x] fixed 2026-11-24 (import); rest kept by decision** · `Profile.kt:49-59`, `MainActivity.kt` (Danger zone), `WebActivity.kt` (NextDNS)
 
 The guard only protects the Websites screen. Ways around it:
 - **Profile import** writes any preference, including `guardOn=false` and `privateDnsHost`, with no guard.
@@ -66,7 +66,9 @@ The guard only protects the Websites screen. Ways around it:
 - **Use NextDNS → turn categories off** needs no puzzle (by request on 2026-11-23).
 - The debug build allows `adb shell run-as` to edit preferences (expected for a dev build).
 
-Fix: put the guard in front of profile import (or skip guard-related keys on import) and the Danger zone. Decide whether the NextDNS path stays open.
+- [x] **Profile import** now goes through the filter guard (`SettingsActivity` import launcher).
+- [-] **Danger zone:** stays unguarded. The guard applies only to filters (user decision, 2026-11-13).
+- [-] **NextDNS switches:** stay unguarded (user request, 2026-11-23).
 
 ### S-03 Secrets stored in plain text
 **P2 · [ ]** · `Prefs.kt`, `NextDns.kt`, `Updater.kt`, `Totp.kt`
@@ -85,11 +87,13 @@ The NextDNS API key, GitHub token and TOTP secret are plain SharedPreferences va
 ## Bugs
 
 ### B-01 VPN filter blocks all IPv6
-**P1 · [ ]** · `Services.kt:84` (`DnsVpnService.startVpn`)
+**P1 · [~] code fixed 2026-11-24, phone test pending** · `Services.kt:84` (`DnsVpnService.startVpn`)
 
 The VPN Builder never calls `allowFamily(OsConstants.AF_INET6)`, so Android adds `::/0 unreachable` for every app. This route was seen on the phone's VPN routing table. On IPv6-first networks (Airtel/Jio) this is the likely reason many apps failed to open with the VPN on. DNS over TCP (truncated answers) to the tunnel is also dropped.
 
-Fix: `allowFamily(AF_INET6)`, and answer or forward TCP DNS (or set TC=0 with EDNS). Re-test the apps that failed.
+- [x] `allowFamily(AF_INET6)` added in `DnsVpnService.startVpn` (2026-11-24)
+- [ ] Test on the phone: turn on the VPN filter, check `dumpsys connectivity` no longer shows `::/0 unreachable`, and open the apps that failed before
+- [ ] (P3) TCP DNS to the tunnel is still dropped; only matters for very large DNS answers
 
 ### B-02 Suspend / hide have no owner
 **P1 · [ ]** · `ScreenTime.kt:179-183`, `Features.kt` (Approval, Blocklist, ChromePolicy), `AppsActivity.kt`, `AppControl.kt`
@@ -97,9 +101,9 @@ Fix: `allowFamily(AF_INET6)`, and answer or forward TCP DNS (or set TC=0 with ED
 Manual "Suspended", Approval mode, Screen time, Blocklist, Allow-only-Chrome and Force stop all flip the same Android flags. Example: suspend an app by hand, add it to a schedule; when the schedule ends, Screen time un-suspends it. See [A-01](#a-01-one-reconciler-for-app-state) for the fix.
 
 ### B-03 Filter guard confirmation not tied to the action
-**P1 · [ ]** · `Guard.kt:34-72`
+**P1 · [x] fixed 2026-11-24** · `Guard.kt:34-72`
 
-`GUARD_WAIT_START` is one global value. Solve the puzzle for a small action ("unblock example.com"), wait, then trigger a bigger one ("turn off the filter guard"): the confirm dialog accepts it. Fix: store the action key with the start time and only confirm the same action.
+`GUARD_WAIT_START` is one global value. Solve the puzzle for a small action ("unblock example.com"), wait, then trigger a bigger one ("turn off the filter guard"): the confirm dialog accepts it. Fixed: `Prefs.GUARD_WAIT_WHAT` stores the action with the start time. A different action shows "Another request is waiting" and can only cancel it, not use it.
 
 ### B-04 ADB PIN reset never tested
 **P1 · [ ]** · `PinResetReceiver.kt`, manifest (`android.permission.DUMP`)
@@ -247,3 +251,6 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 |---|---|---|---|
 | S-01 (part) | 2026-11-23 | `50a3593`, `b24fdd3` | Dedicated keystore in `keys/` with strong password |
 | S-01 (part) | 2026-11-24 | — | Keystore + `keystore.properties` uploaded to private cloud storage |
+| B-03 | 2026-11-24 | see git log | Guard wait tied to one action |
+| S-02 | 2026-11-24 | see git log | Profile import guarded; Danger zone and NextDNS kept open by decision |
+| B-01 (code) | 2026-11-24 | see git log | IPv6 allowed in the VPN filter; phone test pending |
