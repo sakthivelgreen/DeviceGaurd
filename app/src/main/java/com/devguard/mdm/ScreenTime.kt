@@ -175,13 +175,9 @@ object ScreenTime {
         val current = Prefs.stSuspended(c)
         val toSuspend = desired - current
         val toRelease = current - desired
-        val failed = if (toSuspend.isNotEmpty()) runCatching { m.setSuspended(toSuspend, true) }.getOrDefault(toSuspend.toList()) else emptyList()
-        if (toRelease.isNotEmpty()) {
-            // Don't un-pause apps that another feature paused (approved-apps mode).
-            val keep = Prefs.autoSuspended(c)
-            runCatching { m.setSuspended(toRelease - keep, false) }
-        }
-        Prefs.setStSuspended(c, desired - failed.toSet())
+        // Holds: releasing only drops Screen time's claim. Apps also paused by you or by approval stay paused.
+        val failed = Holds.set(c, Hold.SUSPEND_SCREEN_TIME, toSuspend, true)
+        Holds.set(c, Hold.SUSPEND_SCREEN_TIME, toRelease, false)
         (toSuspend - failed.toSet()).forEach { notify(c, it, reasons[it] ?: "screen time") }
 
         // Scheduled sites → Chrome rules + VPN filter.

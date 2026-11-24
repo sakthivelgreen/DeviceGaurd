@@ -170,7 +170,6 @@ class WebActivity : BaseActivity() {
     }
 
     private fun hideOtherBrowsers() {
-        val m = Mdm(this)
         val pkgs = ChromePolicy.otherBrowsers(this)
         if (pkgs.isEmpty()) { toast("No other browsers found"); return }
         val labels = pkgs.map { p ->
@@ -180,8 +179,8 @@ class WebActivity : BaseActivity() {
         MaterialAlertDialogBuilder(this).setTitle("Hide these browsers?")
             .setMultiChoiceItems(labels, pick) { _, i, v -> pick[i] = v }
             .setPositiveButton("Hide") { _, _ ->
-                var n = 0
-                pkgs.forEachIndexed { i, p -> if (pick[i] && runCatching { m.setHidden(p, true) }.getOrDefault(false)) n++ }
+                val chosen = pkgs.filterIndexed { i, _ -> pick[i] }
+                val n = chosen.size - Holds.set(this, Hold.HIDE_MANUAL, chosen, true).size
                 toast("Hidden $n browser(s). Unhide them in Apps & Play Store (show system apps).")
             }
             .setNegativeButton("Cancel", null).show()

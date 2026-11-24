@@ -481,16 +481,15 @@ object ChromePolicy {
 
     /** "Allow only Chrome": hide every other browser now; GuardService hides new ones on install. */
     fun setChromeOnly(c: Context, on: Boolean): Int {
-        val m = Mdm(c)
         Prefs.setFlag(c, Prefs.CHROME_ONLY, on)
-        var n = 0
-        if (on) {
-            val hidden = Prefs.hiddenBrowsers(c).toMutableSet()
-            otherBrowsers(c).forEach { p -> if (runCatching { m.setHidden(p, true) }.getOrDefault(false)) { hidden += p; n++ } }
-            Prefs.setHiddenBrowsers(c, hidden)
+        val n = if (on) {
+            val pkgs = otherBrowsers(c)
+            pkgs.size - Holds.set(c, Hold.HIDE_CHROME_ONLY, pkgs, true).size
         } else {
-            Prefs.hiddenBrowsers(c).forEach { p -> if (runCatching { m.setHidden(p, false) }.getOrDefault(false)) n++ }
-            Prefs.setHiddenBrowsers(c, emptySet())
+            // Drops only this feature's claim: a browser you hid yourself stays hidden.
+            val pkgs = Prefs.hiddenBrowsers(c)
+            Holds.set(c, Hold.HIDE_CHROME_ONLY, pkgs, false)
+            pkgs.count { Holds.owners(c, it, hide = true).isEmpty() }
         }
         GuardService.refresh(c)
         return n
@@ -499,9 +498,7 @@ object ChromePolicy {
     /** Called by GuardService for every new install. Returns true if it was a browser and got hidden. */
     fun onInstalled(c: Context, pkg: String): Boolean {
         if (!Prefs.getFlag(c, Prefs.CHROME_ONLY) || !isBrowser(c, pkg)) return false
-        val m = Mdm(c)
-        if (!runCatching { m.setHidden(pkg, true) }.getOrDefault(false)) return false
-        Prefs.setHiddenBrowsers(c, Prefs.hiddenBrowsers(c) + pkg)
+        if (!Holds.set(c, Hold.HIDE_CHROME_ONLY, pkg, true)) return false
         val nm = c.getSystemService(NotificationManager::class.java)
         nm.createNotificationChannel(NotificationChannel("blocked", "Blocked apps", NotificationManager.IMPORTANCE_HIGH))
         val n = Notification.Builder(c, "blocked")
@@ -610,9 +607,8 @@ object Blocklist {
 
     fun unblock(c: Context, pkg: String) {
         Prefs.setBlockedPkgs(c, Prefs.blockedPkgs(c) - pkg)
-        val m = Mdm(c)
-        // If it was a system app we hid, show it again.
-        if (m.isOwner && m.isHidden(pkg)) runCatching { m.setHidden(pkg, false) }
+        // If it was a system app we hid, drop Blocked apps' claim (it stays hidden if you hid it too).
+        Holds.set(c, Hold.HIDE_BLOCKLIST, pkg, false)
         GuardService.refresh(c)
     }
 
@@ -633,7 +629,7 @@ object Blocklist {
         val name = label(c, pkg)
         val system = runCatching { (c.packageManager.getApplicationInfo(pkg, 0).flags and ApplicationInfo.FLAG_SYSTEM) != 0 }.getOrDefault(false)
         if (system) {
-            runCatching { m.setHidden(pkg, true) }
+            Holds.set(c, Hold.HIDE_BLOCKLIST, pkg, true)
         } else {
             runCatching { if (m.isUninstallBlocked(pkg)) m.setUninstallBlocked(pkg, false) }
             val pi = android.app.PendingIntent.getBroadcast(
@@ -673,9 +669,8 @@ object Approval {
     fun disable(c: Context) {
         Prefs.setApprovalMode(c, false)
         GuardService.refresh(c)
-        val paused = Prefs.autoSuspended(c)
-        if (paused.isNotEmpty() && Mdm(c).isOwner) runCatching { Mdm(c).setSuspended(paused, false) }
-        Prefs.setAutoSuspended(c, emptySet())
+        // Drops only approval's claims; apps paused by you or screen time stay paused.
+        Holds.set(c, Hold.SUSPEND_APPROVAL, Prefs.autoSuspended(c), false)
     }
 
     fun onInstalled(c: Context, pkg: String) {
@@ -686,10 +681,7 @@ object Approval {
 
     fun approve(c: Context, pkg: String) {
         Prefs.setApproved(c, Prefs.approved(c) + pkg)
-        if (pkg in Prefs.autoSuspended(c)) {
-            runCatching { Mdm(c).setSuspended(listOf(pkg), false) }
-            Prefs.setAutoSuspended(c, Prefs.autoSuspended(c) - pkg)
-        }
+        if (pkg in Prefs.autoSuspended(c)) Holds.set(c, Hold.SUSPEND_APPROVAL, pkg, false)
     }
 
     fun unapprove(c: Context, pkg: String) {
@@ -698,23 +690,18 @@ object Approval {
     }
 
     private fun pause(c: Context, pkg: String) {
-        val m = Mdm(c)
-        if (!m.isOwner) return
-        val failed = runCatching { m.setSuspended(listOf(pkg), true) }.getOrDefault(listOf(pkg))
-        if (failed.isEmpty()) {
-            Prefs.setAutoSuspended(c, Prefs.autoSuspended(c) + pkg)
-            notifyPaused(c, pkg)
-        }
+        if (!Mdm(c).isOwner) return
+        if (Holds.set(c, Hold.SUSPEND_APPROVAL, pkg, true)) notifyPaused(c, pkg)
     }
 
     /** Pause any non-system app that isn't approved (e.g. installed while the service wasn't running). */
     fun sweep(c: Context) {
         if (!Prefs.approvalMode(c)) return
         val approved = Prefs.approved(c)
-        val m = Mdm(c)
+        val claimed = Prefs.autoSuspended(c)
         c.packageManager.getInstalledApplications(0)
             .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 && it.packageName != c.packageName }
-            .filter { it.packageName !in approved && !m.isSuspended(it.packageName) }
+            .filter { it.packageName !in approved && it.packageName !in claimed }
             .forEach { pause(c, it.packageName) }
     }
 

@@ -132,10 +132,10 @@ class AppsActivity : BaseActivity() {
         act {
             val p = Mdm.PLAY_STORE
             when (mode) {
-                "Allow" -> { m.setHidden(p, false); m.setSuspended(listOf(p), false) }
+                "Allow" -> { Holds.set(this, Hold.HIDE_MANUAL, p, false); Holds.set(this, Hold.SUSPEND_MANUAL, p, false) }
                 "Suspend" -> {
-                    m.setHidden(p, false)
-                    if (m.setSuspended(listOf(p), true).isNotEmpty()) {
+                    Holds.set(this, Hold.HIDE_MANUAL, p, false)
+                    if (!Holds.set(this, Hold.SUSPEND_MANUAL, p, true)) {
                         // On Google phones the Play Store is the system's "package verifier", which Android never lets anyone pause.
                         confirm(
                             "Play Store can't be paused",
@@ -143,10 +143,10 @@ class AppsActivity : BaseActivity() {
                                 "Hide it instead? The icon disappears and it can't be opened. App updates also stop while it's hidden.\n\n" +
                                 "To block only certain apps, use Blocked apps on the dashboard.",
                             "Hide Play Store",
-                        ) { act { m.setHidden(p, true) }; renderHeader() }
+                        ) { act { Holds.set(this, Hold.HIDE_MANUAL, p, true) }; renderHeader() }
                     }
                 }
-                "Hide" -> if (!m.setHidden(p, true)) toast("Could not hide Play Store")
+                "Hide" -> { Holds.set(this, Hold.SUSPEND_MANUAL, p, false); if (!Holds.set(this, Hold.HIDE_MANUAL, p, true)) toast("Could not hide Play Store") }
             }
         }
         renderHeader()
@@ -249,8 +249,15 @@ class AppsActivity : BaseActivity() {
 
     private fun apply(a: AppItem, cur: BooleanArray, next: BooleanArray) {
         act {
-            if (cur[0] != next[0] && !m.setHidden(a.pkg, next[0])) toast("This app can't be hidden")
-            if (cur[1] != next[1] && m.setSuspended(listOf(a.pkg), next[1]).isNotEmpty()) toast("This app can't be suspended")
+            // Manual hide/pause is one claim among several (Holds): unticking removes only yours.
+            if (cur[0] != next[0]) {
+                if (!Holds.set(this, Hold.HIDE_MANUAL, a.pkg, next[0]) && next[0]) toast("This app can't be hidden")
+                else if (!next[0] && m.isHidden(a.pkg)) toast("Still hidden by: ${Holds.describe(this, a.pkg, hide = true)}")
+            }
+            if (cur[1] != next[1]) {
+                if (!Holds.set(this, Hold.SUSPEND_MANUAL, a.pkg, next[1]) && next[1]) toast("This app can't be suspended")
+                else if (!next[1] && m.isSuspended(a.pkg)) toast("Still paused by: ${Holds.describe(this, a.pkg, hide = false)}")
+            }
             if (cur[2] != next[2]) m.setUninstallBlocked(a.pkg, next[2])
             if (cur[3] != next[3]) { if (next[3]) Approval.approve(this, a.pkg) else Approval.unapprove(this, a.pkg) }
             if (cur[4] != next[4]) {

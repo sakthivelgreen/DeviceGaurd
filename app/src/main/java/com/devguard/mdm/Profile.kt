@@ -14,7 +14,9 @@ object Profile {
     private val SECRET_KEYS = setOf(
         "pinHash", "pinSalt", "recHash", "recSalt", Prefs.TOTP_SECRET, Prefs.UPD_TOKEN, Prefs.NEXTDNS_KEY,
         Prefs.GUARD_WAIT_START, Prefs.GUARD_WAIT_WHAT, Prefs.BG_LAST_RUN, Prefs.BG_LAST_COUNT, Prefs.DNS_FALLBACK, Prefs.UPD_LAST,
-        "stSuspended", "stSites", "autoSuspended", "hiddenBrowsers", "dnsBlockedNets", Prefs.ST_TEMP_ALLOW,
+        "stSites", "dnsBlockedNets", Prefs.ST_TEMP_ALLOW, "holdsV1",
+        // Holds lists: feature-owned ones are rebuilt by their feature; manual ones go in device.hidden/suspended.
+        *Hold.values().map { it.key }.toTypedArray(),
     )
 
     fun export(c: Context): String {
@@ -25,13 +27,13 @@ object Profile {
             prefs.put(k, if (v is Set<*>) JSONObject().put("set", JSONArray(v.toList())) else JSONObject().put(typeOf(v), v))
         }
         val apps = c.packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).map { it.packageName }
-        val auto = Prefs.autoSuspended(c) + Prefs.stSuspended(c)
         val dpm = JSONObject()
             .put("restrictions", JSONArray(RESTRICTION_GROUPS.flatMap { it.second }.filter { m.hasRestriction(it.key) }.map { it.key }))
             .put("camera", runCatching { m.dpm.getCameraDisabled(m.admin) }.getOrDefault(false))
             .put("screenCapture", runCatching { m.dpm.getScreenCaptureDisabled(m.admin) }.getOrDefault(false))
-            .put("hidden", JSONArray(apps.filter { m.isHidden(it) }))
-            .put("suspended", JSONArray(apps.filter { m.isSuspended(it) && it !in auto }))
+            // Only YOUR hides/pauses; feature-owned ones (screen time, approval, Chrome-only, blocklist) are rebuilt.
+            .put("hidden", JSONArray(Holds.get(c, Hold.HIDE_MANUAL).toList()))
+            .put("suspended", JSONArray(Holds.get(c, Hold.SUSPEND_MANUAL).toList()))
             .put("uninstallBlocked", JSONArray(apps.filter { m.isUninstallBlocked(it) && it != c.packageName }))
             .put("systemUpdate", Device.updateMode(c))
         return JSONObject().put("app", "DeviceGuard MDM").put("version", 1).put("created", System.currentTimeMillis())
@@ -67,8 +69,8 @@ object Profile {
         }
         runCatching { m.dpm.setCameraDisabled(m.admin, d.optBoolean("camera")) }
         runCatching { m.dpm.setScreenCaptureDisabled(m.admin, d.optBoolean("screenCapture")) }
-        list("hidden").forEach { if (runCatching { m.setHidden(it, true) }.getOrDefault(false)) applied++ }
-        list("suspended").let { if (it.isNotEmpty()) runCatching { m.setSuspended(it, true) } }
+        list("hidden").let { applied += it.size - Holds.set(c, Hold.HIDE_MANUAL, it, true).size }
+        Holds.set(c, Hold.SUSPEND_MANUAL, list("suspended"), true)
         list("uninstallBlocked").forEach { runCatching { m.setUninstallBlocked(it, true) } }
         runCatching { Device.setUpdateMode(c, d.optInt("systemUpdate", 0)) }
 

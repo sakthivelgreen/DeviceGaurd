@@ -285,6 +285,7 @@ class GuardService : Service() {
         else startForeground(1, n)
         val f = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, f, RECEIVER_EXPORTED) else registerReceiver(receiver, f)
+        runCatching { Holds.migrate(this) } // before screen time / approval act on pauses (B-02)
         Thread {
             Blocklist.sweep(this)
             if (Prefs.getFlag(this, Prefs.CHROME_ONLY)) ChromePolicy.otherBrowsers(this).forEach { ChromePolicy.onInstalled(this, it) }

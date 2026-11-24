@@ -109,13 +109,14 @@ class BloatActivity : BaseActivity() {
         act {
             if (on) {
                 when (state) {
-                    AppState.HIDDEN -> m.setHidden(e.pkg, false)
+                    AppState.HIDDEN -> Holds.set(this, Hold.HIDE_MANUAL, e.pkg, false)
                     AppState.REMOVED -> m.dpm.enableSystemApp(m.admin, e.pkg)
                     else -> {}
                 }
-                toast("${e.name.takeIf { it != e.pkg } ?: e.pkg} enabled")
+                if (m.isHidden(e.pkg)) toast("Still hidden by: ${Holds.describe(this, e.pkg, hide = true)}")
+                else toast("${e.name.takeIf { it != e.pkg } ?: e.pkg} enabled")
             } else {
-                if (m.setHidden(e.pkg, true)) toast("${e.name.takeIf { it != e.pkg } ?: e.pkg} disabled")
+                if (Holds.set(this, Hold.HIDE_MANUAL, e.pkg, true)) toast("${e.name.takeIf { it != e.pkg } ?: e.pkg} disabled")
                 else toast("Android doesn't allow disabling this app")
             }
         }

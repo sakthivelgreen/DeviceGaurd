@@ -15,7 +15,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 |---|---|---|---|
 | [S-01](#s-01-release-signing-key-not-backed-up) | P1 | [x] | Signing key: keystore set up, backed up, install verified |
 | [B-01](#b-01-vpn-filter-blocks-all-ipv6) | P1 | [~] | VPN filter blocks all IPv6 (likely cause of apps not opening) |
-| [B-02](#b-02-suspend--hide-have-no-owner) | P1 | [ ] | Suspend / hide flags have no owner; features undo each other |
+| [B-02](#b-02-suspend--hide-have-no-owner) | P1 | [x] | Suspend / hide flags have no owner; features undo each other |
 | [B-03](#b-03-filter-guard-confirmation-not-tied-to-the-action) | P1 | [x] | Filter guard confirmation isn't tied to the action |
 | [S-02](#s-02-filter-guard-bypass-paths) | P1 | [x] | Filter guard bypass paths (profile import, Danger zone, NextDNS) |
 | [B-04](#b-04-adb-pin-reset-never-tested) | P1 | [x] | ADB PIN reset never tested end-to-end |
@@ -37,7 +37,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [D-04](#d-04-unlock-and-credential-logic) | P2 | [ ] | DRY: PIN/2FA unlock, credential reset, PIN rules, hashing, lockout |
 | [D-05](#d-05-other-duplication) | P3 | [ ] | DRY: DoT test, uninstall, ADB strings, guard helper, `Mdm(c)` |
 | [D-06](#d-06-two-preference-styles) | P3 | [ ] | DRY: two preference styles; export key lists can drift |
-| [A-01](#a-01-one-reconciler-for-app-state) | P2 | [ ] | Architecture: one reconciler for suspended/hidden apps |
+| [A-01](#a-01-one-reconciler-for-app-state) | P2 | [x] | Architecture: one reconciler for suspended/hidden apps |
 | [A-02](#a-02-split-featureskt) | P3 | [ ] | Architecture: split Features.kt (734 lines, 8 features) |
 | [A-03](#a-03-application-class-and-workmanager) | P3 | [ ] | Architecture: Application class + WorkManager for periodic jobs |
 | [A-04](#a-04-tests-and-build) | P3 | [ ] | Unit tests for pure logic; enable R8 for release |
@@ -96,9 +96,14 @@ The VPN Builder never calls `allowFamily(OsConstants.AF_INET6)`, so Android adds
 - [ ] (P3) TCP DNS to the tunnel is still dropped; only matters for very large DNS answers
 
 ### B-02 Suspend / hide have no owner
-**P1 · [ ]** · `ScreenTime.kt:179-183`, `Features.kt` (Approval, Blocklist, ChromePolicy), `AppsActivity.kt`, `AppControl.kt`
+**P1 · [x] fixed 2026-11-24 (Holds.kt)** · `ScreenTime.kt:179-183`, `Features.kt` (Approval, Blocklist, ChromePolicy), `AppsActivity.kt`, `AppControl.kt`
 
 Manual "Suspended", Approval mode, Screen time, Blocklist, Allow-only-Chrome and Force stop all flip the same Android flags. Example: suspend an app by hand, add it to a schedule; when the schedule ends, Screen time un-suspends it. See [A-01](#a-01-one-reconciler-for-app-state) for the fix.
+
+- [x] `Holds.kt`: one list per source; all pause/hide changes go through `Holds.set` (Apps, Play Store, Bloatware, Approval, Screen time, Allow only Chrome, Blocked apps, hide-other-browsers, profile import, release all)
+- [x] One-time migration on the phone: 39 hidden apps recorded as manual, no app state changed (2026-11-24)
+- [x] Apps / Bloatware say "Still hidden/paused by: …" when another feature holds the app
+- [ ] Manual test: pause an app in Apps, put it in a short screen-time schedule, check it stays paused after the schedule ends
 
 ### B-03 Filter guard confirmation not tied to the action
 **P1 · [x] fixed 2026-11-24** · `Guard.kt:34-72`
@@ -219,7 +224,7 @@ Typed functions (`Prefs.domains`) and raw key constants (`Prefs.getFlag(c, Prefs
 ## Architecture and quality
 
 ### A-01 One reconciler for app state
-**P2 · [ ]** · fixes [B-02](#b-02-suspend--hide-have-no-owner)
+**P2 · [x] done 2026-11-24 (`Holds.kt`)** · fixes [B-02](#b-02-suspend--hide-have-no-owner)
 
 Each feature declares which apps it wants suspended or hidden (manual, approval, screen time, blocklist, Chrome-only). One engine combines the sets and applies only the difference. It removes the scattered `setSuspended` / `setHidden` calls and the ownership bugs.
 
@@ -256,3 +261,5 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 | B-03 | 2026-11-24 | see git log | Guard wait tied to one action |
 | S-02 | 2026-11-24 | see git log | Profile import guarded; Danger zone and NextDNS kept open by decision |
 | B-01 (code) | 2026-11-24 | see git log | IPv6 allowed in the VPN filter; phone test pending |
+| B-04 | 2026-11-24 | `0676138` | ADB PIN reset verified on the phone |
+| B-02 / A-01 | 2026-11-24 | see git log | Holds.kt: per-feature pause/hide lists; migration verified on the phone |

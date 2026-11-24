@@ -63,6 +63,8 @@ object Prefs {
     private fun putSet(c: Context, k: String, v: Set<String>) = p(c).edit().putStringSet(k, v).commit()
     private fun flag(c: Context, k: String) = p(c).getBoolean(k, false)
     private fun putFlag(c: Context, k: String, v: Boolean) = p(c).edit().putBoolean(k, v).commit()
+    fun getSet(c: Context, k: String): Set<String> = set(c, k)
+    fun setSet(c: Context, k: String, v: Set<String>) = putSet(c, k, v)
 
     // ---- Website blocking ----
     fun domains(c: Context) = set(c, "domains")
@@ -95,8 +97,7 @@ object Prefs {
     const val ST_LIMITS = "stLimits"         // JSON {pkg: minutes}
     const val ST_SCHEDULES = "stSchedules"   // JSON [schedule]
     const val ST_TEMP_ALLOW = "stTempAllow"  // JSON {pkg: untilMillis}
-    fun stSuspended(c: Context) = set(c, "stSuspended")
-    fun setStSuspended(c: Context, v: Set<String>) = putSet(c, "stSuspended", v)
+    fun stSuspended(c: Context) = Holds.get(c, Hold.SUSPEND_SCREEN_TIME) // changed only through Holds
     fun stSites(c: Context) = set(c, "stSites")
     fun setStSites(c: Context, v: Set<String>) = putSet(c, "stSites", v)
 
@@ -152,8 +153,7 @@ object Prefs {
     const val CHROME_YOUTUBE = "chromeYoutube"
     const val CHROME_NO_INCOGNITO = "chromeNoIncognito"
     const val CHROME_ONLY = "chromeOnly"
-    fun hiddenBrowsers(c: Context) = set(c, "hiddenBrowsers")
-    fun setHiddenBrowsers(c: Context, v: Set<String>) = putSet(c, "hiddenBrowsers", v)
+    fun hiddenBrowsers(c: Context) = Holds.get(c, Hold.HIDE_CHROME_ONLY) // changed only through Holds
     fun getFlag(c: Context, k: String) = flag(c, k)
     fun setFlag(c: Context, k: String, v: Boolean) = putFlag(c, k, v)
 
@@ -162,8 +162,7 @@ object Prefs {
     fun setApprovalMode(c: Context, v: Boolean) = putFlag(c, "approvalMode", v)
     fun approved(c: Context) = set(c, "approved")
     fun setApproved(c: Context, v: Set<String>) = putSet(c, "approved", v)
-    fun autoSuspended(c: Context) = set(c, "autoSuspended")
-    fun setAutoSuspended(c: Context, v: Set<String>) = putSet(c, "autoSuspended", v)
+    fun autoSuspended(c: Context) = Holds.get(c, Hold.SUSPEND_APPROVAL) // changed only through Holds
 
     // ---- Always-blocked apps ----
     fun blockedPkgs(c: Context) = set(c, "blockedPkgs")
