@@ -1,17 +1,15 @@
 // DeviceGuard MDM — Author: Sakthivel J
 package com.devguard.mdm
 
-import android.app.Activity
-import android.content.Intent
 import android.text.InputType
 import android.widget.EditText
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
- * Website blocking, three layers:
- *  1. Family-safe filter via forced Private DNS (no VPN, whole phone)
- *  2. Your own blocked-site list enforced in Chrome via managed policies (no VPN)
- *  3. Optional local VPN DNS filter (your list across all apps)
+ * Website blocking, two layers:
+ *  1. Family-safe filter via forced Private DNS (whole phone, every app), e.g. AdGuard Family or your NextDNS profile
+ *  2. Your own blocked-site list enforced in Chrome via managed policies (and sent to NextDNS on request)
+ * The VPN filter was removed (R-03, 2026-11-25).
  */
 class WebActivity : BaseActivity() {
 
@@ -58,21 +56,6 @@ class WebActivity : BaseActivity() {
             .setNegativeButton("Cancel", null).show()
     }
 
-    @Deprecated("Deprecated in Java")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == WebFilter.VPN_CONSENT_REQUEST) {
-            if (resultCode == Activity.RESULT_OK) WebFilter.finishEnable(this)
-            else {
-                // Cancelled: undo the always-on setting, keep the current filter as it was.
-                val m = Mdm(this)
-                if (m.isOwner && !Prefs.webBlock(this)) runCatching { m.dpm.setAlwaysOnVpnPackage(m.admin, null, false) }
-                toast("VPN filter not started. Your current filter is unchanged.")
-            }
-            render()
-        }
-    }
-
     private fun addDomains(d: Set<String>) {
         Prefs.updateSet(this, Prefs.K_DOMAINS) { it + d }
         onDomainsChanged(this)
@@ -85,19 +68,10 @@ class WebActivity : BaseActivity() {
             if (msg == PrivateDns.UNAFFILIATED_HELP && host != null)
                 MaterialAlertDialogBuilder(this).setTitle("Private Space is blocking this").setMessage(msg)
                     .setPositiveButton("Copy setup command") { _, _ -> Bloat.copy(this, PrivateDns.ADB_GRANT) }
-                    .setNeutralButton("Use VPN filter") { _, _ -> useVpnFamily() }
                     .setNegativeButton("Close", null).show()
             else toast(msg)
             render()
         }
-    }
-
-    /** Family-safe filtering through the app's own VPN (works with Private Space present). */
-    private fun useVpnFamily() {
-        Prefs.setFamilyDns(this, true)
-        DnsVpnService.reload(this)
-        if (WebFilter.enable(this)) toast("VPN filter on with family-safe DNS")
-        render()
     }
 
     /** Switch helper: turning ON (stronger) applies directly; turning OFF (weaker) needs the filter guard. */
@@ -214,7 +188,7 @@ class WebActivity : BaseActivity() {
             }
 
             // ---- 1. Family-safe (Private DNS) ----
-            card("Family-safe filter · no VPN") {
+            card("Family-safe filter (Private DNS)") {
             text("Forces the phone's Private DNS to a filtering service and locks the setting. Works in every app and browser.", 13f).alpha = 0.8f
             val chosen = Prefs.privateDnsHost(context)
             val backup = SmartDns.fallbackActive(context)
@@ -316,7 +290,7 @@ class WebActivity : BaseActivity() {
 
             // ---- Blocked-site list ----
             card("Your blocked sites") {
-            text("Used by the Chrome rules and the VPN filter. Blocking a domain also blocks its subdomains.", 13f).alpha = 0.8f
+            text("Used by the Chrome rules, and sent to NextDNS with the button in the NextDNS card. Blocking a domain also blocks its subdomains.", 13f).alpha = 0.8f
             val input = EditText(context).apply {
                 hint = "example.com"
                 isSingleLine = true
@@ -356,7 +330,7 @@ class WebActivity : BaseActivity() {
             }
 
             // ---- 2. Chrome policies ----
-            card("Chrome rules · no VPN") {
+            card("Chrome rules") {
             if (!ChromePolicy.installed(context)) text("Chrome isn't installed on this phone.", 13f, bold = true)
             text("Enforced inside Chrome through its enterprise policies. Restart Chrome after changes; check them at chrome://policy.", 13f).alpha = 0.8f
             val chromeOn = Prefs.getFlag(context, Prefs.CHROME_ON)
@@ -400,29 +374,6 @@ class WebActivity : BaseActivity() {
                 12f,
             ).alpha = 0.65f
 
-            }
-
-            // ---- 3. VPN filter (optional) ----
-            card("VPN filter · optional") {
-            text(
-                "Blocks your site list in every app through a local, always-on VPN (no traffic leaves the phone through it). " +
-                    "Can't run together with the Private DNS filter: turning it on switches Private DNS back to automatic.",
-                13f,
-            ).alpha = 0.8f
-            switchRow(
-                "VPN filter",
-                if (owner) "Always-on: the user can't turn it off" else "Not Device Owner: the user can turn this off",
-                Prefs.webBlock(context),
-            ) { _, on ->
-                // No filter guard on the VPN switches (removed on request).
-                if (!on) { WebFilter.disable(this@WebActivity); render(); true }
-                else WebFilter.enable(this@WebActivity)
-            }
-            switchRow(
-                "Family-safe upstream for VPN",
-                "VPN filter also blocks adult and malware sites (Cloudflare 1.1.1.3)",
-                Prefs.familyDns(context),
-            ) { _, on -> Prefs.setFamilyDns(this@WebActivity, on); DnsVpnService.reload(this@WebActivity); true }
             }
 
             text("Tip: browsers cache lookups. If a newly blocked site still opens, close and reopen the browser.", 12f).alpha = 0.6f

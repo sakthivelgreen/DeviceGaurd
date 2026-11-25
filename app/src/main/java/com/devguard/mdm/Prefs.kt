@@ -129,9 +129,11 @@ object Prefs {
 
     // ---- Website blocking ----
     fun domains(c: Context) = set(c, K_DOMAINS)
-    const val K_WEB_BLOCK = "webBlock"
-    fun webBlock(c: Context) = flag(c, K_WEB_BLOCK)
-    fun setWebBlock(c: Context, v: Boolean) = putFlag(c, K_WEB_BLOCK, v)
+    /** Settings of the removed VPN filter (R-03), deleted on update by [removeLegacyVpnKeys]. */
+    private val LEGACY_VPN_KEYS = listOf("webBlock", "familyDns")
+    fun removeLegacyVpnKeys(c: Context) {
+        if (LEGACY_VPN_KEYS.any { p(c).contains(it) }) p(c).edit().apply { LEGACY_VPN_KEYS.forEach { remove(it) } }.commit()
+    }
     // ---- Generic string / JSON helpers ----
     fun getStr(c: Context, k: String): String? = p(c).getString(k, null)
     fun setStr(c: Context, k: String, v: String?) = p(c).edit().putString(k, v).commit()
@@ -201,11 +203,8 @@ object Prefs {
 
     /** Private DNS host chosen in the app (enforced/auto-reverted by GuardService), or null. */
     const val K_PRIVATE_DNS_HOST = "privateDnsHost"
-    const val K_FAMILY_DNS = "familyDns"
     fun privateDnsHost(c: Context): String? = p(c).getString(K_PRIVATE_DNS_HOST, null)
     fun setPrivateDnsHost(c: Context, v: String?) = p(c).edit().putString(K_PRIVATE_DNS_HOST, v).commit()
-    fun familyDns(c: Context) = flag(c, K_FAMILY_DNS)
-    fun setFamilyDns(c: Context, v: Boolean) = putFlag(c, K_FAMILY_DNS, v)
 
     // ---- Chrome policies ----
     const val CHROME_ON = "chromeOn"

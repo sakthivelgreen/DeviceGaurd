@@ -73,7 +73,6 @@ object Profile {
         runCatching { ChromePolicy.apply(c) }
         Prefs.privateDnsHost(c)?.let { runCatching { PrivateDns.apply(c, it) } }
         runCatching { Device.applyWifiAllow(c) }
-        DnsVpnService.reload(c)
         GuardService.refresh(c)
         Branding.apply(c)
         runCatching { ScreenTime.evaluate(c) }

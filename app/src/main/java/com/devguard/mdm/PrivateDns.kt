@@ -16,7 +16,7 @@ object PrivateDns {
         "Android won't let the app use its normal method because Private Space (or App Clone / Guest) can't be managed by DeviceGuard.\n\n" +
             "One-time fix, Private Space stays: connect the phone to the PC and run the setup command " +
             "(tap Copy setup command). DeviceGuard can then set and lock Private DNS itself. Then choose the filter again.\n\n" +
-            "Other options: VPN filter + Family-safe upstream (main profile only), or Chrome rules (Chrome only)."
+            "Other option: Chrome rules (they work in Chrome only)."
 
     /** One-time ADB grant that lets the app write and lock Private DNS itself. */
     const val ADB_GRANT = "adb shell pm grant ${BuildConfig.APPLICATION_ID} android.permission.WRITE_SECURE_SETTINGS"
@@ -134,7 +134,6 @@ object PrivateDns {
             GuardService.refresh(c)
             return if (ok) "Private DNS filter turned off" else "Couldn't turn it off here. From the PC run:\n$ADB_OFF"
         }
-        if (Prefs.webBlock(c)) WebFilter.disable(c) // the VPN filter can't work alongside a forced Private DNS host
 
         val viaDpm: Int? = try {
             m.dpm.setGlobalPrivateDnsModeSpecifiedHost(m.admin, host)

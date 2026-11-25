@@ -14,7 +14,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | ID | Pri | Status | Title |
 |---|---|---|---|
 | [S-01](#s-01-release-signing-key-not-backed-up) | P1 | [x] | Signing key: keystore set up, backed up, install verified |
-| [B-01](#b-01-vpn-filter-blocks-all-ipv6) | P1 | [~] | VPN filter blocks all IPv6 (likely cause of apps not opening) |
+| [B-01](#b-01-vpn-filter-blocks-all-ipv6) | P1 | [-] | VPN filter blocks all IPv6 (likely cause of apps not opening) |
 | [B-02](#b-02-suspend--hide-have-no-owner) | P1 | [x] | Suspend / hide flags have no owner; features undo each other |
 | [B-03](#b-03-filter-guard-confirmation-not-tied-to-the-action) | P1 | [x] | Filter guard confirmation isn't tied to the action |
 | [S-02](#s-02-filter-guard-bypass-paths) | P1 | [x] | Filter guard bypass paths (profile import, Danger zone, NextDNS) |
@@ -27,10 +27,10 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [B-06](#b-06-failures-are-hidden) | P2 | [x] | Failures are hidden; uninstall/update results go nowhere |
 | [B-07](#b-07-typed-text-lost-on-page-refresh) | P2 | [x] | Typed text lost when a page re-renders |
 | [B-08](#b-08-concurrent-preference-writes) | P2 | [x] | Concurrent read-modify-write of preference sets can lose updates |
-| [B-09](#b-09-smaller-bugs) | P3 | [ ] | Smaller bugs (usage before midnight, plaintext VPN DNS, update check timer) |
+| [B-09](#b-09-smaller-bugs) | P3 | [x] | Smaller bugs (usage before midnight, plaintext VPN DNS, update check timer) |
 | [R-01](#r-01-dead-code-office-split-dns-and-doh) | P2 | [x] | Remove dead code: office split DNS + DoH |
 | [R-02](#r-02-other-unused-code) | P3 | [x] | Remove other unused functions and wrappers |
-| [R-03](#r-03-decide-on-the-vpn-filter) | P2 | [~] | Decide: fix or remove the VPN filter |
+| [R-03](#r-03-decide-on-the-vpn-filter) | P2 | [x] | Decide: fix or remove the VPN filter |
 | [R-04](#r-04-location-permission-self-grant) | P3 | [-] | Location permission self-grant (kept on request) |
 | [D-01](#d-01-notifications) | P2 | [x] | DRY: notification building (7 copies) |
 | [D-02](#d-02-installed-apps-and-labels) | P2 | [x] | DRY: installed-app list + label lookups (10 files) |
@@ -135,13 +135,13 @@ Fix: read the list and each app's state with `inBackground`, then build the rows
 ## Bugs
 
 ### B-01 VPN filter blocks all IPv6
-**P1 · [~] code fixed 2026-11-24, phone test pending** · `Services.kt:84` (`DnsVpnService.startVpn`)
+**P1 · [-] obsolete 2026-11-25: the VPN filter was removed ([R-03](#r-03-decide-on-the-vpn-filter))** · `Services.kt:84` (`DnsVpnService.startVpn`)
 
 The VPN Builder never calls `allowFamily(OsConstants.AF_INET6)`, so Android adds `::/0 unreachable` for every app. This route was seen on the phone's VPN routing table. On IPv6-first networks (Airtel/Jio) this is the likely reason many apps failed to open with the VPN on. DNS over TCP (truncated answers) to the tunnel is also dropped.
 
 - [x] `allowFamily(AF_INET6)` added in `DnsVpnService.startVpn` (2026-11-24)
-- [ ] Test on the phone: turn on the VPN filter, check `dumpsys connectivity` no longer shows `::/0 unreachable`, and open the apps that failed before
-- [ ] (P3) TCP DNS to the tunnel is still dropped; only matters for very large DNS answers
+- [-] Test on the phone: turn on the VPN filter, check `dumpsys connectivity` no longer shows `::/0 unreachable`, and open the apps that failed before (VPN filter removed)
+- [-] (P3) TCP DNS to the tunnel is still dropped; only matters for very large DNS answers (VPN filter removed)
 
 ### B-02 Suspend / hide have no owner
 **P1 · [x] fixed 2026-11-24 (Holds.kt)** · `ScreenTime.kt:179-183`, `Features.kt` (Approval, Blocklist, ChromePolicy), `AppsActivity.kt`, `AppControl.kt`
@@ -196,9 +196,9 @@ Done: `EditText.keepText(key)` marks a field; `scrollPage` copies its text, curs
 Read-modify-write on sets (`setAutoSuspended(autoSuspended + pkg)`) can lose an update when two threads write at once. Fixed: `Prefs.updateSet(c, key) { … }` (one lock) for domains, Wi-Fi list, no-background, remembered networks, approved, blocked and kiosk lists; screen-time JSON writes share the engine's lock; Holds lists change only inside `Holds.set` (synchronized).
 
 ### B-09 Smaller bugs
-**P3 · [ ]**
+**P3 · [x] done 2026-11-25 (the VPN item is obsolete: VPN filter removed)**
 - [x] `ScreenTime.usageBetween`: an app already open at midnight isn't counted until it's reopened. Fixed 2026-11-25: events are read from 12 h earlier and only the part after midnight counts.
-- [ ] VPN filter sends DNS unencrypted (UDP 53) to Cloudflare. Waits on the [R-03](#r-03-decide-on-the-vpn-filter) decision (fix or remove the VPN filter).
+- [-] VPN filter sends DNS unencrypted (UDP 53) to Cloudflare. Obsolete: the VPN filter was removed ([R-03](#r-03-decide-on-the-vpn-filter)).
 - [x] `Updater.autoCheck` saves the "last check" time before the check succeeds, so a failure waits 24 h. Fixed 2026-11-25: the day counts only after GitHub answers; failures retry at most hourly.
 - [x] `Updater.install` doesn't check the downloaded APK's package/version before installing. Fixed 2026-11-25: package name, newer version, version = tag, same signing certificate (SHA-256).
 - [x] TOTP codes can be reused within their 90 s window (no replay check). Fixed 2026-11-25: the last accepted step is stored (`totpLastStep`, not exported); a code from the same or an earlier step is refused.
@@ -221,9 +221,11 @@ Unused since the VPN backup was removed on 2026-11-23: `office`, `isOffice`, `fo
 - [x] `UNINSTALL_RESULT` / `UPDATE_RESULT` broadcasts: add a receiver ([B-06](#b-06-failures-are-hidden)) or delete them
 
 ### R-03 Decide on the VPN filter
-**P2 · [~] decided 2026-11-25: remove** · `Services.kt` (`DnsVpnService`), `Features.kt` (`WebFilter`), `WebActivity.kt`
+**P2 · [x] removed 2026-11-25** · `Services.kt` (`DnsVpnService`), `Features.kt` (`WebFilter`), `WebActivity.kt`
 
 About 250 lines plus the consent flow and Private-DNS-versus-VPN switching. It was the main source of app breakage, and the NextDNS denylist now covers "my site list in every app". Either remove it, or keep it and fix [B-01](#b-01-vpn-filter-blocks-all-ipv6).
+
+Done: `DnsVpnService`, its manifest entry, the VPN card and consent flow, "Use VPN filter" in the Private Space dialog, and the `webBlock` / `familyDns` settings are gone. `WebFilter.removeLegacyVpn` (boot, update, dashboard) clears DeviceGuard as always-on VPN if an older version set it, so a phone can't be left with a lockdown VPN that no longer exists. **Lock VPN settings** stays: it stops other VPN apps from getting around the DNS filter.
 
 ### R-04 Location permission self-grant
 **P3 · [-] won't fix for now (kept on request, 2026-11-23)** · `Device.kt:21-30`, manifest
@@ -303,7 +305,7 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 
 ### A-04 Tests and build
 **P3 · [~] mostly done 2026-11-25**
-- [x] Unit tests for pure logic: `ScreenTime.isActive`, DNS packet parsing (`question`, `nxdomain`), `Totp`, `Blocklist.parse`, `WebFilter.normalize`. Done: 13 tests in `app/src/test/.../LogicTest.kt` (schedules incl. overnight and Sunday, RFC 6238 vectors, clock drift, Play links, domains, PIN rules), all passing. DNS packet parsing is private inside `DnsVpnService`; testing it waits on [R-03](#r-03-decide-on-the-vpn-filter) (no point if the VPN filter is removed).
+- [x] Unit tests for pure logic: `ScreenTime.isActive`, DNS packet parsing (`question`, `nxdomain`), `Totp`, `Blocklist.parse`, `WebFilter.normalize`. Done: 13 tests in `app/src/test/.../LogicTest.kt` (schedules incl. overnight and Sunday, RFC 6238 vectors, clock drift, Play links, domains, PIN rules), all passing. DNS packet parsing: not needed any more, the VPN filter was removed ([R-03](#r-03-decide-on-the-vpn-filter)).
 - [~] Enable R8 (`isMinifyEnabled = true`, `shrinkResources`) for release, with keep rules for the admin receiver and services. Done in the build (`proguard-rules.pro`: enums kept by name, line numbers kept); the release build passes. Still to check: the R8 build on the phone (`assembleDebug -PminifyDebug`) before the next published release.
 
 ### A-05 Strings and UI
@@ -330,6 +332,7 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 | P-01 | 2026-11-25 | see git log | System calls off the main thread; release in the background with a `releasing` guard |
 | P-02, D-02, D-03, B-07 | 2026-11-25 | see git log | `Apps.kt`, background lists and icons, no raw threads, typed text kept |
 | A-02 | 2026-11-25 | see git log | Features.kt split into 7 files |
+| R-03 | 2026-11-25 | see git log | VPN filter removed; always-on VPN cleanup on update. B-01 and B-09's VPN item obsolete |
 | A-04 (part) | 2026-11-25 | see git log | Unit tests, R8 for release, Maven Central mirror |
 | D-06, A-03 (part) | 2026-11-25 | see git log | One key style + NOT_EXPORTED in Prefs; Application class; incremental usage |
 | B-09 (4 of 5), D-05, B-06 | 2026-11-25 | see git log | TOTP replay, update check timing + APK check, usage before midnight; one DoT test; app ID from BuildConfig; branding/Wi-Fi errors shown |

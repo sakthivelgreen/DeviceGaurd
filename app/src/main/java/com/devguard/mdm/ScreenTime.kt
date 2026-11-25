@@ -15,7 +15,7 @@ import java.util.Calendar
  * [evaluate] runs every minute from GuardService (TIME_TICK) and on screen on. It works out which apps
  * should be paused right now (limit reached or inside a schedule, minus temporary unlocks), suspends /
  * un-suspends only the apps it manages (Prefs.stSuspended), and keeps the scheduled site list
- * (Prefs.stSites) in sync with the Chrome rules and the VPN filter.
+ * (Prefs.stSites) in sync with the Chrome rules.
  */
 object ScreenTime {
     data class Schedule(
@@ -225,7 +225,7 @@ object ScreenTime {
         Holds.set(c, Hold.SUSPEND_SCREEN_TIME, toRelease, false)
         (toSuspend - failed.toSet()).forEach { notify(c, it, reasons[it] ?: "screen time") }
 
-        // Scheduled sites → Chrome rules + VPN filter.
+        // Scheduled sites → Chrome rules.
         val sites = active.flatMap { it.sites }.toSet()
         if (sites != Prefs.stSites(c)) {
             Prefs.setStSites(c, sites)

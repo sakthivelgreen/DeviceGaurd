@@ -47,7 +47,7 @@ val RESTRICTION_GROUPS: List<Pair<String, List<Restriction>>> = listOf(
         Restriction(UserManager.DISALLOW_CONFIG_MOBILE_NETWORKS, "Lock mobile network settings"),
         Restriction(UserManager.DISALLOW_CONFIG_TETHERING, "Block hotspot & tethering"),
         Restriction(UserManager.DISALLOW_CONFIG_BLUETOOTH, "Lock Bluetooth settings"),
-        Restriction(UserManager.DISALLOW_CONFIG_VPN, "Lock VPN settings", "Recommended with website blocking"),
+        Restriction(UserManager.DISALLOW_CONFIG_VPN, "Lock VPN settings", "Recommended: stops VPN apps from getting around the website filter"),
         Restriction(UserManager.DISALLOW_CONFIG_PRIVATE_DNS, "Lock Private DNS", "Recommended with website blocking"),
     ),
     "Device" to listOf(
@@ -99,6 +99,7 @@ class Mdm(private val c: Context) {
         Branding.apply(c) // organization name + lock screen / support messages
         runCatching { Holds.migrate(c) } // one-time: record existing manual pauses/hides (B-02)
         runCatching { Secrets.migrate(c) } // encrypt secrets stored in plain text by older versions (S-03)
+        runCatching { WebFilter.removeLegacyVpn(c) } // the VPN filter was removed (R-03)
         if (Build.VERSION.SDK_INT >= 33) runCatching {
             dpm.setPermissionGrantState(
                 admin, pkg, Manifest.permission.POST_NOTIFICATIONS,
@@ -115,7 +116,7 @@ class Mdm(private val c: Context) {
     fun releaseAll() {
         releasing = true
         try {
-            WebFilter.disable(c)
+            WebFilter.removeLegacyVpn(c)
             Approval.disable(c)
             ChromePolicy.clear(c)
             runCatching { PrivateDns.apply(c, null) }

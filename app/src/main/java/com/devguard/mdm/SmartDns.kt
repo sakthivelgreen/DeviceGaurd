@@ -2,7 +2,6 @@
 package com.devguard.mdm
 
 import android.content.Context
-import android.content.Intent
 
 /**
  * Smart DNS: keeps the family filter working on networks that block DNS-over-TLS (port 853), e.g. office Wi-Fi.
@@ -21,15 +20,6 @@ object SmartDns {
     fun autoOn(c: Context) = !Prefs.getFlag(c, Prefs.SMART_DNS_OFF)
     fun enabled(c: Context) = autoOn(c) && Prefs.privateDnsHost(c) != null && PrivateDns.canWrite(c) && Mdm(c).isOwner
     fun fallbackActive(c: Context) = Prefs.getFlag(c, Prefs.DNS_FALLBACK)
-
-    /** Stops a VPN that an older version started for backup mode (backup no longer uses the VPN). */
-    fun cleanup(c: Context) {
-        if (Prefs.webBlock(c)) return
-        val m = Mdm(c)
-        if (m.isOwner && runCatching { m.dpm.getAlwaysOnVpnPackage(m.admin) }.getOrNull() == c.packageName)
-            runCatching { m.dpm.setAlwaysOnVpnPackage(m.admin, null, false) }
-        runCatching { c.startService(Intent(c, DnsVpnService::class.java).setAction(DnsVpnService.ACTION_STOP)) }
-    }
 
     /** Known IPs for the filter servers, so the test doesn't need DNS (which is what's broken). */
     fun bootstrap(host: String): List<String> = when {
@@ -142,7 +132,6 @@ object SmartDns {
     fun exitFallback(c: Context) {
         Prefs.setFlag(c, Prefs.DNS_FALLBACK, false)
         Prefs.privateDnsHost(c)?.let { PrivateDns.write(c, it) } // filter back on Private DNS
-        cleanup(c)
         Notify.cancel(c, NOTIFY_ID)
     }
 
@@ -151,7 +140,6 @@ object SmartDns {
         lastKey = null
         if (!fallbackActive(c)) return
         Prefs.setFlag(c, Prefs.DNS_FALLBACK, false)
-        cleanup(c)
         Notify.cancel(c, NOTIFY_ID)
     }
 
