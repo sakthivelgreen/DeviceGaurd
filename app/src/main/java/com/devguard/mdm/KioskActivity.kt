@@ -36,13 +36,13 @@ class KioskActivity : AppCompatActivity() {
         val pm = packageManager
         val apps = Prefs.kioskPkgs(context).mapNotNull { pkg ->
             val launch = pm.getLaunchIntentForPackage(pkg) ?: return@mapNotNull null
-            val label = runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrDefault(pkg)
+            val label = Apps.label(context, pkg)
             Triple(pkg, label, launch)
         }.sortedBy { it.second.lowercase() }
 
         if (apps.isEmpty()) card { text("No kiosk apps available.", 16f) }
         tileGrid(apps.map { (pkg, label, launch) ->
-            Tile(label, color = Palette.BLUE, image = runCatching { pm.getApplicationIcon(pkg) }.getOrNull()) {
+            Tile(label, color = Palette.BLUE, image = Apps.icon(context, pkg)) {
                 act { startActivity(launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
             }
         })

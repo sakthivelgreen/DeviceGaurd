@@ -21,27 +21,31 @@ class BackgroundActivity : BaseActivity() {
         "com.google.android.gm", "com.android.deskclock", "com.zoho.accounts.oneauth", "com.spotify.music",
     )
 
+    /** One user app with its row's state, read off the main thread (P-02). */
+    private data class Item(val info: ApplicationInfo, val label: String, val stopped: Boolean, val restricted: Boolean?)
+
+    private var items: List<Item>? = null // null until the first load finishes
+
     override fun onResume() {
         super.onResume()
-        if (!isFinishing) render()
+        if (!isFinishing) { render(); load() } // shows the last list at once, then refreshes it
     }
 
-    private fun stopNow(pkg: String, label: String) {
-        Thread {
-            val err = AppControl.forceStop(this, pkg)
-            runOnUiThread { toast(err ?: "$label stopped"); if (!isFinishing) render() }
-        }.start()
-    }
+    /** Reads the user apps, their names and stopped / Restricted state in the background, then redraws. */
+    private fun load() = inBackground({
+        Apps.userApps(this).map { (info, label) ->
+            Item(info, label, AppControl.isStopped(this, info.packageName), AppControl.osRestricted(this, info.packageName))
+        }
+    }) { items = it; render() }
+
+    private fun stopNow(pkg: String, label: String) =
+        inBackground({ AppControl.forceStop(this, pkg) }) { err -> toast(err ?: "$label stopped"); load() }
 
     private fun render() {
         val m = Mdm(this)
         val owner = m.isOwner
-        val pm = packageManager
         val listed = Prefs.noBackgroundPkgs(this)
-        val apps = pm.getInstalledApplications(0)
-            .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 && it.packageName != packageName }
-            .map { it to pm.getApplicationLabel(it).toString() }
-            .sortedWith(compareBy({ it.first.packageName !in listed }, { it.second.lowercase() }))
+        val apps = items?.sortedWith(compareBy({ it.info.packageName !in listed }, { it.label.lowercase() }))
 
         scrollPage("Background apps", back = true, subtitle = "${listed.size} apps can't run in the background") {
             if (!owner) card { text("⚠️ Device Owner required", 14f, bold = true, color = Palette.ORANGE) }
@@ -63,15 +67,13 @@ class BackgroundActivity : BaseActivity() {
                 ).alpha = 0.7f
                 button("Stop all listed apps now") {
                     toast("Stopping…")
-                    Thread {
-                        val n = AppControl.stopListed(this@BackgroundActivity)
-                        runOnUiThread { toast("$n app(s) stopped"); if (!isFinishing) render() }
-                    }.start()
+                    inBackground({ AppControl.stopListed(this@BackgroundActivity) }) { n -> toast("$n app(s) stopped"); load() }
                 }.isEnabled = owner && listed.isNotEmpty()
             }
 
             card("Apps: switch = no background · tap = force stop now") {
-                apps.forEach { (info, label) -> addView(row(info, label, info.packageName in listed, owner)) }
+                if (apps == null) text("Reading apps…", 13f)
+                else apps.forEach { addView(row(it, it.info.packageName in listed, owner)) }
             }
 
             card("Android Restricted mode (PC, optional)") {
@@ -94,16 +96,15 @@ class BackgroundActivity : BaseActivity() {
         }
     }
 
-    private fun row(info: ApplicationInfo, label: String, on: Boolean, owner: Boolean): LinearLayout {
+    private fun row(item: Item, on: Boolean, owner: Boolean): LinearLayout {
+        val (info, label, stopped, restricted) = item
         val pkg = info.packageName
-        val stopped = AppControl.isStopped(this, pkg)
-        val restricted = AppControl.osRestricted(this, pkg)
         return LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(0, dp(8), 0, dp(8))
             val icon = ImageView(context)
-            runCatching { icon.setImageDrawable(packageManager.getApplicationIcon(info)) }
+            Apps.loadIcon(icon, pkg, info)
             addView(icon, LinearLayout.LayoutParams(dp(38), dp(38)).apply { marginEnd = dp(12) })
             val texts = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
             texts.addView(TextView(context).apply { text = label; textSize = 15f })

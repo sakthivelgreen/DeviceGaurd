@@ -23,9 +23,9 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [S-04](#s-04-weak-brute-force-protection) | P2 | [x] | Weak brute-force protection (4-digit PIN, in-memory lockout) |
 | [B-05](#b-05-clock-changes-defeat-time-rules) | P2 | [x] | Changing the clock defeats screen time and session timeout |
 | [P-01](#p-01-heavy-binder-work-on-the-main-thread) | P2 | [x] | Heavy system calls on the main thread (dashboard, export, release, Apps list) |
-| [P-02](#p-02-bloatware-and-background-screens-build-on-the-main-thread) | P2 | [ ] | Bloatware (1.1 s) and Background apps (0.6 s) screens build on the main thread |
+| [P-02](#p-02-bloatware-and-background-screens-build-on-the-main-thread) | P2 | [x] | Bloatware (1.1 s) and Background apps (0.6 s) screens build on the main thread |
 | [B-06](#b-06-failures-are-hidden) | P2 | [x] | Failures are hidden; uninstall/update results go nowhere |
-| [B-07](#b-07-typed-text-lost-on-page-refresh) | P2 | [ ] | Typed text lost when a page re-renders |
+| [B-07](#b-07-typed-text-lost-on-page-refresh) | P2 | [x] | Typed text lost when a page re-renders |
 | [B-08](#b-08-concurrent-preference-writes) | P2 | [x] | Concurrent read-modify-write of preference sets can lose updates |
 | [B-09](#b-09-smaller-bugs) | P3 | [ ] | Smaller bugs (usage before midnight, plaintext VPN DNS, update check timer) |
 | [R-01](#r-01-dead-code-office-split-dns-and-doh) | P2 | [x] | Remove dead code: office split DNS + DoH |
@@ -33,8 +33,8 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [R-03](#r-03-decide-on-the-vpn-filter) | P2 | [ ] | Decide: fix or remove the VPN filter |
 | [R-04](#r-04-location-permission-self-grant) | P3 | [-] | Location permission self-grant (kept on request) |
 | [D-01](#d-01-notifications) | P2 | [x] | DRY: notification building (7 copies) |
-| [D-02](#d-02-installed-apps-and-labels) | P2 | [ ] | DRY: installed-app list + label lookups (10 files) |
-| [D-03](#d-03-background-threads) | P2 | [ ] | DRY: `Thread { runOnUiThread { } }` (28 copies) |
+| [D-02](#d-02-installed-apps-and-labels) | P2 | [x] | DRY: installed-app list + label lookups (10 files) |
+| [D-03](#d-03-background-threads) | P2 | [x] | DRY: `Thread { runOnUiThread { } }` (28 copies) |
 | [D-04](#d-04-unlock-and-credential-logic) | P2 | [x] | DRY: PIN/2FA unlock, credential reset, PIN rules, hashing, lockout |
 | [D-05](#d-05-other-duplication) | P3 | [ ] | DRY: DoT test, uninstall, ADB strings, guard helper, `Mdm(c)` |
 | [D-06](#d-06-two-preference-styles) | P3 | [ ] | DRY: two preference styles; export key lists can drift |
@@ -78,7 +78,7 @@ The NextDNS API key, GitHub token and TOTP secret are plain SharedPreferences va
 - [x] All reads/writes go through `Secrets.get/put` (NextDns, Updater, Totp, Settings, Websites); old plain-text values are encrypted on update (`Mdm.ensureBaseline` → `Secrets.migrate`)
 - [x] Verified on the phone: `nextdnsKey` and `totpSecret` changed from plain text to `enc1:…` after the update (2026-11-25)
 - [x] `Totp.verify` fails closed if the secret can't be decrypted
-- [ ] Check on the phone: NextDNS categories load, and unlock with PIN + two-factor code works
+- [x] Checked on the phone (2026-11-25): Websites opened 4 times with no errors; two-factor was turned off in Settings, which needs a valid code, so the encrypted secret decrypts
 - Limit: with the **debug** build, someone with ADB could still run code as the app and use the Keystore key. Only the release build (not debuggable) closes that.
 
 ### S-04 Weak brute-force protection
@@ -117,7 +117,7 @@ Every DevicePolicyManager / PackageManager question is a call into Android's sys
 - Release is NOT tested on the phone on purpose: it removes Device Owner, which needs a factory reset to get back. Reviewed in code only.
 
 ### P-02 Bloatware and Background screens build on the main thread
-**P2 · [ ]** · `BloatActivity.kt`, `BackgroundActivity.kt`, `Bloat.kt`
+**P2 · [x] fixed 2026-11-25** · `BloatActivity.kt`, `BackgroundActivity.kt`, `Bloat.kt`
 
 Found while checking P-01 (2026-11-25): opening **Bloatware** took 1.12 s (one 1.1 s frame, 53 frames skipped) and **Background apps** 0.61 s.
 
@@ -125,6 +125,10 @@ Found while checking P-01 (2026-11-25): opening **Bloatware** took 1.12 s (one 1
 - `BackgroundActivity.render` reads installed apps, labels, stopped / OS-restricted state and icons on the main thread, and re-runs after each change.
 
 Fix: read the list and each app's state with `inBackground`, then build the rows (same pattern as the Apps list); load icons lazily or in the background. Overlaps [D-02](#d-02-installed-apps-and-labels).
+
+- [x] Both screens show the last list at once and refresh it in the background; names come from `Apps` (cached), icons load in the background (`Apps.loadIcon`, 2 threads).
+- [x] Bloatware sorting no longer reads names and hidden state inside the sort comparator (that was a system call per comparison).
+- [ ] Check on the phone: open Bloatware and Background apps, read the open times.
 
 ---
 
@@ -180,9 +184,11 @@ Daily limits, extra time and day boundaries use wall-clock time; moving the date
 - [ ] Policy calls whose result is still ignored (many `runCatching`): review screen by screen.
 
 ### B-07 Typed text lost on page refresh
-**P2 · [ ]** · `Ui.kt` (`scrollPage`), all `BaseActivity` screens
+**P2 · [x] fixed 2026-11-25** · `Ui.kt` (`scrollPage`), all `BaseActivity` screens
 
 Every switch rebuilds the whole page, so half-typed input (e.g. a site in Websites → Block this site) is cleared. Fix: keep input state across renders, or re-render only the changed card. See [A-05](#a-05-strings-and-ui).
+
+Done: `EditText.keepText(key)` marks a field; `scrollPage` copies its text, cursor and focus into the rebuilt page. Used by Websites → Block this site and Blocked apps → Add an app (the only text fields on pages; the rest are in dialogs). PIN fields are cleared on purpose.
 
 ### B-08 Concurrent preference writes
 **P2 · [x] fixed 2026-11-24** · `Prefs.kt` set helpers, used from UI, GuardService main thread, `work` and `netExec` executors
@@ -234,14 +240,18 @@ Location is self-granted (and locked with `POLICY_FIXED`) only to show the curre
 7 copies of create channel → build → notify. Fix: one `Notify.post(channel, title, text, id, ongoing)`; create channels once at app start.
 
 ### D-02 Installed apps and labels
-**P2 · [ ]** · Apps, Background, BlockList, ScreenTime, Bloat, Approval, Profile, `Mdm.releaseAll`
+**P2 · [x] fixed 2026-11-25 (`Apps.kt`)** · Apps, Background, BlockList, ScreenTime, Bloat, Approval, Profile, `Mdm.releaseAll`
 
 Each loads `getInstalledApplications` + labels on its own thread; 10 files look up an app label. Fix: one cached `AppRepository` (`list()`, `label(pkg)`, `icon(pkg)`).
 
+Done: `Apps.list / packages / userApps / label / icon / loadIcon`. Names are cached per process; the app list itself isn't cached (one system call, always fresh after installs). Every screen and policy loop uses it.
+
 ### D-03 Background threads
-**P2 · [ ]** · 28 copies in Apps, Background, ScreenTime, Settings, Web activities
+**P2 · [x] fixed 2026-11-25** · 28 copies in Apps, Background, ScreenTime, Settings, Web activities
 
 `Thread { … runOnUiThread { if (!isFinishing) … } }` with no cancellation. Fix: convert each to `inBackground(work) { result -> }` (`Ui.kt`, added in P-01; Apps force stop already uses it). Later the helper itself can switch to `lifecycleScope` + coroutines in one place.
+
+Done: no `Thread { }` or `runOnUiThread` left in any screen. `GuardService`'s startup sweep runs on its own `work` executor with each step in `runCatching` (an exception in the old raw thread would have crashed the app).
 
 ### D-04 Unlock and credential logic
 **P2 · [x] done 2026-11-24**
@@ -311,3 +321,4 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 | S-04, B-05, B-06, B-08, R-01, R-02, D-01, D-04 | 2026-11-24 | see git log | Group 2 |
 | S-03 | 2026-11-25 | see git log | Secrets encrypted with Android Keystore |
 | P-01 | 2026-11-25 | see git log | System calls off the main thread; release in the background with a `releasing` guard |
+| P-02, D-02, D-03, B-07 | 2026-11-25 | see git log | `Apps.kt`, background lists and icons, no raw threads, typed text kept |

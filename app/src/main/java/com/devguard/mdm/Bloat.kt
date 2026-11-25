@@ -5,7 +5,6 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
 
 enum class BloatCat(val label: String, val color: Int, val help: String) {
     SAFE("Safe", Palette.GREEN, "Safe to disable or remove. Nothing important depends on these."),
@@ -44,8 +43,7 @@ object Bloat {
 
     /** All system packages on the phone, including ones removed for this user. */
     fun systemApps(c: Context): List<ApplicationInfo> =
-        c.packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES or PackageManager.MATCH_DISABLED_COMPONENTS)
-            .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0 && it.packageName != c.packageName }
+        Apps.list(c, Apps.INCLUDE_REMOVED).filter { Apps.isSystem(it) && it.packageName != c.packageName }
 
     fun state(m: Mdm, info: ApplicationInfo): AppState = when {
         (info.flags and ApplicationInfo.FLAG_INSTALLED) == 0 -> AppState.REMOVED

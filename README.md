@@ -609,6 +609,7 @@ MDM_App/
             ├── ScreenTime.kt            Limits, schedules, temporary unlock, usage queries, engine (evaluate)
             ├── ScreenTimeActivity.kt    Screen time screen + schedule editor
             ├── Totp.kt                  Two-factor TOTP (RFC 6238) + QR bitmap helper (zxing)
+            ├── Apps.kt                  Installed apps, cached names, background icon loading (one place for all screens)
             ├── AdminUi.kt               Shared dialogs: recovery code, PC reset, change PIN, TOTP prompt/setup
             ├── SettingsActivity.kt      PIN/2FA, profile export/import, provisioning QR, app updates
             ├── Device.kt                Wi-Fi allowlist, system update policy, per-app permissions, provisioning JSON
@@ -680,6 +681,7 @@ All screens are built in code with these helpers. They keep the look consistent 
 | `button(label, outlined)` / `materialButton()` | Material buttons |
 | `confirm()`, `askPin()`, `pinField()`, `padded()` | Dialogs and inputs |
 | `act { }` | Runs code and shows any exception as a toast instead of crashing |
+| `EditText.keepText(key)` | Marks an on-page text field so typed text, cursor and focus survive a page redraw |
 | `inBackground(work) { result -> }` | Runs slow work (many system calls, files) off the main thread, then hands the result back on the main thread only if the screen is still open; errors become a toast |
 | `Palette` | Brand colours: BLUE, GREEN, PURPLE, ORANGE, TEAL, PINK, INDIGO, SLATE, RED |
 | `BaseActivity` | Sends you back to the PIN screen if the session expired; extends the session on touch |
@@ -857,5 +859,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-24 | **Group 2 fixes:** B-05 automatic date & time kept on while screen time is in use (policy + direct write + instant revert); S-04 PIN 6–12 digits, PBKDF2 hashes (old hashes upgrade on next unlock), stored growing lockout shared by PIN, recovery and two-factor codes, session on the boot clock; B-06 uninstall/update failures now show a notification (`InstallResultReceiver`); B-08 locked read-modify-write for saved lists and screen-time data; D-01 one notification helper (`Notify.kt`); D-04 one unlock flow and credential reset; R-01/R-02 dead office-DNS/DoH code and unused helpers removed.
 | 2026-11-25 | **S-03:** NextDNS API key, GitHub token and two-factor secret are encrypted with an Android Keystore key (`Secrets.kt`); existing plain-text values were encrypted automatically on update. Two-factor check now fails closed if its secret can't be read (recovery code / PC reset still work).
 | 2026-11-25 | **P-01:** system calls moved off the main thread. Dashboard ~70 → ~4 calls per open (baseline writes in the background); Restrictions page reads all restrictions once (~100 → ~3 per redraw); Apps rows make no system calls while scrolling (status read in the background); export and Danger zone → Release run in the background, Release behind a dialog that can't be dismissed, with a `releasing` guard so nothing re-hides apps meanwhile. New `inBackground` helper in `Ui.kt`. |
+| 2026-11-25 | **P-02, D-02, D-03, B-07:** Bloatware and Background apps load their lists in the background (Bloatware opened in 1.1 s before); new `Apps.kt` for installed apps, cached names and background icons, used by every screen; no raw `Thread {}` left (all use `inBackground`); typed text in Websites → Block this site and Blocked apps → Add an app survives page redraws. |
 
 © Sakthivel J

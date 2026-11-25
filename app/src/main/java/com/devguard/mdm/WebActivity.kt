@@ -26,22 +26,15 @@ class WebActivity : BaseActivity() {
 
     private fun loadNextDns() {
         if (!NextDns.configured(this)) return
-        Thread {
-            val r = runCatching { NextDns.load(this) }
-            runOnUiThread {
-                nd = r.getOrNull(); ndError = r.exceptionOrNull()?.message
-                if (!isFinishing) render()
-            }
-        }.start()
+        inBackground({ runCatching { NextDns.load(this) } }) { r ->
+            nd = r.getOrNull(); ndError = r.exceptionOrNull()?.message
+            render()
+        }
     }
 
     /** Runs a NextDNS API change in the background, then reloads the state. */
-    private fun ndCall(block: () -> Unit) {
-        Thread {
-            val r = runCatching(block)
-            runOnUiThread { r.exceptionOrNull()?.let { toast(it.message) }; loadNextDns() }
-        }.start()
-    }
+    private fun ndCall(block: () -> Unit) =
+        inBackground({ runCatching(block) }) { r -> r.exceptionOrNull()?.let { toast(it.message) }; loadNextDns() }
 
     private fun nextDnsSetup() {
         val col = column()
@@ -88,18 +81,15 @@ class WebActivity : BaseActivity() {
 
     private fun setPrivateDns(host: String?) {
         toast("Applying…")
-        Thread {
-            val msg = try { PrivateDns.apply(this, host) } catch (e: Exception) { e.message ?: "Failed" }
-            runOnUiThread {
-                if (msg == PrivateDns.UNAFFILIATED_HELP && host != null)
-                    MaterialAlertDialogBuilder(this).setTitle("Private Space is blocking this").setMessage(msg)
-                        .setPositiveButton("Copy setup command") { _, _ -> Bloat.copy(this, PrivateDns.ADB_GRANT) }
-                        .setNeutralButton("Use VPN filter") { _, _ -> useVpnFamily() }
-                        .setNegativeButton("Close", null).show()
-                else toast(msg)
-                if (!isFinishing) render()
-            }
-        }.start()
+        inBackground({ try { PrivateDns.apply(this, host) } catch (e: Exception) { e.message ?: "Failed" } }) { msg ->
+            if (msg == PrivateDns.UNAFFILIATED_HELP && host != null)
+                MaterialAlertDialogBuilder(this).setTitle("Private Space is blocking this").setMessage(msg)
+                    .setPositiveButton("Copy setup command") { _, _ -> Bloat.copy(this, PrivateDns.ADB_GRANT) }
+                    .setNeutralButton("Use VPN filter") { _, _ -> useVpnFamily() }
+                    .setNegativeButton("Close", null).show()
+            else toast(msg)
+            render()
+        }
     }
 
     /** Family-safe filtering through the app's own VPN (works with Private Space present). */
@@ -173,7 +163,7 @@ class WebActivity : BaseActivity() {
         val pkgs = ChromePolicy.otherBrowsers(this)
         if (pkgs.isEmpty()) { toast("No other browsers found"); return }
         val labels = pkgs.map { p ->
-            runCatching { packageManager.getApplicationLabel(packageManager.getApplicationInfo(p, 0)).toString() }.getOrDefault(p) + "\n$p"
+            Apps.label(this, p) + "\n$p"
         }.toTypedArray()
         val pick = BooleanArray(pkgs.size) { true }
         MaterialAlertDialogBuilder(this).setTitle("Hide these browsers?")
@@ -292,10 +282,7 @@ class WebActivity : BaseActivity() {
                         }
                     }
                     button("Send my blocked sites to NextDNS", outlined = true) {
-                        Thread {
-                            val r = runCatching { NextDns.syncDenylist(this@WebActivity) }
-                            runOnUiThread { toast(r.fold({ "$it site(s) added to NextDNS" }, { it.message })) }
-                        }.start()
+                        inBackground({ NextDns.syncDenylist(this@WebActivity) }) { toast("$it site(s) added to NextDNS") }
                     }.isEnabled = owner
                     button("Change NextDNS account…", outlined = true) { nextDnsSetup() }
                 }
@@ -335,6 +322,7 @@ class WebActivity : BaseActivity() {
                 isSingleLine = true
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
             }
+            input.keepText("blockSite") // B-07: typed text survives redraws
             addView(input)
             button("Block this site") {
                 val d = WebFilter.normalize(input.text.toString())

@@ -2,8 +2,6 @@
 package com.devguard.mdm
 
 import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
-import android.graphics.drawable.Drawable
 import android.os.Bundle
 import android.os.UserManager
 import android.view.ViewGroup
@@ -32,7 +30,6 @@ class AppsActivity : BaseActivity() {
     private var shown: List<AppItem> = emptyList()
     private var showSystem = false
     private var query = ""
-    private val icons = HashMap<String, Drawable>()
 
     private lateinit var header: LinearLayout
     private lateinit var dyn: LinearLayout
@@ -77,10 +74,9 @@ class AppsActivity : BaseActivity() {
     }
 
     private fun load() = inBackground({
-        val pm = packageManager
-        val list = pm.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES or PackageManager.MATCH_DISABLED_COMPONENTS)
+        val list = Apps.list(this, Apps.INCLUDE_REMOVED)
             .filter { it.packageName != packageName && (it.flags and ApplicationInfo.FLAG_INSTALLED) != 0 }
-            .map { AppItem(it.packageName, pm.getApplicationLabel(it).toString(), (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0, it) }
+            .map { AppItem(it.packageName, Apps.label(this, it), Apps.isSystem(it), it) }
             .sortedBy { it.label.lowercase() }
         list to list.associate { it.pkg to readStatus(it.pkg) }
     }) { (list, st) -> all = list; status = st; filter() }
@@ -291,9 +287,6 @@ class AppsActivity : BaseActivity() {
         updated(a.pkg)
     }
 
-    private fun iconOf(a: AppItem): Drawable =
-        icons.getOrPut(a.pkg) { packageManager.getApplicationIcon(a.info) }
-
     inner class Row(val root: LinearLayout, val icon: ImageView, val title: TextView, val sub: TextView, val status: TextView) :
         RecyclerView.ViewHolder(root)
 
@@ -332,7 +325,7 @@ class AppsActivity : BaseActivity() {
             val s = statusOf(a)
             holder.status.text = s
             holder.status.visibility = if (s.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
-            holder.icon.setImageDrawable(runCatching { iconOf(a) }.getOrNull())
+            Apps.loadIcon(holder.icon, a.pkg, a.info)
             holder.root.setOnClickListener { manage(a) }
         }
     }

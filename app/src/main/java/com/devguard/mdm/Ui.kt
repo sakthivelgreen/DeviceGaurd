@@ -86,6 +86,17 @@ fun Context.column() = LinearLayout(this).apply {
 }
 
 private const val PAGE_SCROLL_TAG = "devguard_page_scroll"
+private const val KEEP_PREFIX = "keep:"
+
+/** Marks an on-page text field so what's typed survives page redraws (B-07). [key] must be unique on the page. */
+fun EditText.keepText(key: String): EditText = apply { tag = KEEP_PREFIX + key }
+
+/** Every text field inside this view. */
+private fun View.editTexts(): List<EditText> = when (this) {
+    is EditText -> listOf(this)
+    is android.view.ViewGroup -> (0 until childCount).flatMap { getChildAt(it).editTexts() }
+    else -> emptyList()
+}
 
 /**
  * Builds a scrolling page. When a screen re-renders itself (after a switch or button),
@@ -98,10 +109,20 @@ fun Activity.scrollPage(
     keepScroll: Boolean = true,
     build: LinearLayout.() -> Unit,
 ) {
-    val oldY = if (keepScroll) window.decorView.findViewWithTag<ScrollView>(PAGE_SCROLL_TAG)?.scrollY ?: 0 else 0
+    val old = window.decorView.findViewWithTag<ScrollView>(PAGE_SCROLL_TAG)
+    val oldY = if (keepScroll) old?.scrollY ?: 0 else 0
+    // B-07: text typed into fields marked with keepText() survives the rebuild (with its cursor and focus).
+    val typed = old?.editTexts()?.mapNotNull { e -> (e.tag as? String)?.takeIf { it.startsWith(KEEP_PREFIX) }?.let { it to e } }
+        ?.associate { (key, e) -> key to Triple(e.text.toString(), e.selectionEnd, e.hasFocus()) }.orEmpty()
     val col = column()
     if (title != null) col.pageHeader(this, title, subtitle, back)
     col.build()
+    if (typed.isNotEmpty()) col.editTexts().forEach { e ->
+        val (text, cursor, focused) = typed[e.tag as? String] ?: return@forEach
+        e.setText(text)
+        e.setSelection(cursor.coerceIn(0, text.length))
+        if (focused) e.post { e.requestFocus() }
+    }
     val sv = ScrollView(this).apply {
         tag = PAGE_SCROLL_TAG
         // Don't auto-focus (and scroll to) the first text field when the page is rebuilt.

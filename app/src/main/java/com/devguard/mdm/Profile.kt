@@ -2,7 +2,6 @@
 package com.devguard.mdm
 
 import android.content.Context
-import android.content.pm.PackageManager
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -27,7 +26,7 @@ object Profile {
             if (k in SECRET_KEYS) return@forEach
             prefs.put(k, if (v is Set<*>) JSONObject().put("set", JSONArray(v.toList())) else JSONObject().put(typeOf(v), v))
         }
-        val apps = c.packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).map { it.packageName }
+        val apps = Apps.packages(c)
         val dpm = JSONObject()
             .put("restrictions", m.restrictions().let { r -> JSONArray(RESTRICTION_GROUPS.flatMap { it.second }.filter { r.getBoolean(it.key) }.map { it.key }) })
             .put("camera", runCatching { m.dpm.getCameraDisabled(m.admin) }.getOrDefault(false))

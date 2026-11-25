@@ -2,7 +2,6 @@
 package com.devguard.mdm
 
 import android.content.Context
-import android.content.pm.PackageManager
 
 /**
  * Who wants an app paused (suspended) or hidden. Fixes B-02 / A-01 in ISSUES.md.
@@ -88,7 +87,7 @@ object Holds {
         if (Prefs.getFlag(c, MIGRATED)) return
         val m = Mdm(c)
         if (!m.isOwner) return
-        val pkgs = c.packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).map { it.packageName }
+        val pkgs = Apps.packages(c)
         val blocked = Prefs.blockedPkgs(c)
         val susp = mutableSetOf<String>()
         val hideManual = mutableSetOf<String>()

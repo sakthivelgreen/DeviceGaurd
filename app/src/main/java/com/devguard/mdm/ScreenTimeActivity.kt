@@ -3,7 +3,6 @@ package com.devguard.mdm
 
 import android.app.TimePickerDialog
 import android.content.Intent
-import android.content.pm.ApplicationInfo
 import android.provider.Settings
 import android.text.InputType
 import android.view.Gravity
@@ -34,23 +33,22 @@ class ScreenTimeActivity : BaseActivity() {
         super.onResume()
         if (isFinishing) return
         render()
-        Thread {
+        inBackground({
             val t = ScreenTime.usageToday(this)
             val days = (0..6).map { ScreenTime.usageForDay(this, it) }
             val wa = HashMap<String, Long>()
             days.forEach { d -> d.forEach { (p, v) -> wa[p] = (wa[p] ?: 0L) + v } }
-            runOnUiThread {
-                today = t; week = days.map { it.values.sum() }; weekApps = wa; loaded = true
-                if (!isFinishing) render()
-            }
-        }.start()
+            Triple(t, days, wa)
+        }) { (t, days, wa) ->
+            today = t; week = days.map { it.values.sum() }; weekApps = wa; loaded = true
+            render()
+        }
     }
 
     private fun label(pkg: String) = Blocklist.label(this, pkg)
-    private fun userApps(): List<Pair<String, String>> = packageManager.getInstalledApplications(0)
-        .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 && it.packageName != packageName }
-        .map { it.packageName to packageManager.getApplicationLabel(it).toString() }
-        .sortedBy { it.second.lowercase() }
+    /** Reads the user apps (package, name) in the background, then calls [then] (D-02, P-02). */
+    private fun withUserApps(then: (List<Pair<String, String>>) -> Unit) =
+        inBackground({ Apps.userApps(this).map { it.first.packageName to it.second } }, then)
 
     private fun render() {
         val owner = Mdm(this).isOwner
@@ -102,7 +100,7 @@ class ScreenTimeActivity : BaseActivity() {
                         s.enabled, owner,
                     ) { _, on ->
                         ScreenTime.saveSchedule(this@ScreenTimeActivity, s.copy(enabled = on))
-                        Thread { ScreenTime.evaluate(this@ScreenTimeActivity) }.start()
+                        inBackground({ ScreenTime.evaluate(this@ScreenTimeActivity) })
                         render(); true
                     }
                     text("Edit ${s.name}", 12f, color = Palette.BLUE).setOnClickListener { editSchedule(s) }
@@ -152,7 +150,7 @@ class ScreenTimeActivity : BaseActivity() {
         gravity = Gravity.CENTER_VERTICAL
         setPadding(0, dp(6), 0, dp(6))
         val icon = ImageView(context)
-        runCatching { icon.setImageDrawable(packageManager.getApplicationIcon(pkg)) }
+        Apps.loadIcon(icon, pkg)
         addView(icon, LinearLayout.LayoutParams(dp(34), dp(34)).apply { marginEnd = dp(12) })
         val col = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
         val until = ScreenTime.allowedUntil(this@ScreenTimeActivity, pkg)
@@ -184,10 +182,10 @@ class ScreenTimeActivity : BaseActivity() {
     }
 
     private fun allow(pkg: String, min: Int) {
-        Thread { ScreenTime.allowFor(this, pkg, min); runOnUiThread { toast("${label(pkg)} allowed for $min min"); render() } }.start()
+        inBackground({ ScreenTime.allowFor(this, pkg, min) }) { toast("${label(pkg)} allowed for $min min"); render() }
     }
 
-    private fun reevaluate() = Thread { ScreenTime.evaluate(this); runOnUiThread { if (!isFinishing) render() } }.start()
+    private fun reevaluate() = inBackground({ ScreenTime.evaluate(this) }) { render() }
 
     private fun setLimitDialog(pkg: String) {
         AppControl.protectedReason(this, pkg)?.let { toast(it); return }
@@ -197,8 +195,7 @@ class ScreenTimeActivity : BaseActivity() {
             }.show()
     }
 
-    private fun pickApp(title: String, onPick: (String) -> Unit) {
-        val apps = userApps()
+    private fun pickApp(title: String, onPick: (String) -> Unit) = withUserApps { apps ->
         MaterialAlertDialogBuilder(this).setTitle(title)
             .setItems(apps.map { it.second }.toTypedArray()) { _, i -> onPick(apps[i].first) }.show()
     }
@@ -232,8 +229,7 @@ class ScreenTimeActivity : BaseActivity() {
         col.addView(timeBtn)
 
         val appsBtn = materialButton("Apps to block: ${s.apps.size}", outlined = true) {}
-        appsBtn.setOnClickListener {
-            val apps = userApps()
+        appsBtn.setOnClickListener { withUserApps { apps ->
             val pick = BooleanArray(apps.size) { apps[it].first in s.apps }
             MaterialAlertDialogBuilder(this).setTitle("Apps blocked during this schedule")
                 .setMultiChoiceItems(apps.map { it.second }.toTypedArray(), pick) { _, i, v -> pick[i] = v }
@@ -241,7 +237,7 @@ class ScreenTimeActivity : BaseActivity() {
                     s = s.copy(apps = apps.filterIndexed { i, _ -> pick[i] }.map { it.first }.toSet())
                     appsBtn.text = "Apps to block: ${s.apps.size}"
                 }.show()
-        }
+        } }
         col.addView(appsBtn)
 
         col.text("Websites to block (comma separated, e.g. youtube.com, instagram.com)", 12f).alpha = 0.7f

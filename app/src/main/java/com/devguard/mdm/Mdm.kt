@@ -7,7 +7,6 @@ import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.UserManager
@@ -123,8 +122,7 @@ class Mdm(private val c: Context) {
             RESTRICTION_GROUPS.flatMap { it.second }.forEach { r -> runCatching { dpm.clearUserRestriction(admin, r.key) } }
             runCatching { dpm.setCameraDisabled(admin, false) }
             runCatching { dpm.setScreenCaptureDisabled(admin, false) }
-            c.packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).forEach {
-                val p = it.packageName
+            Apps.packages(c).forEach { p ->
                 if (isHidden(p)) runCatching { setHidden(p, false) }
                 if (isSuspended(p)) runCatching { setSuspended(listOf(p), false) }
                 if (isUninstallBlocked(p)) runCatching { setUninstallBlocked(p, false) }

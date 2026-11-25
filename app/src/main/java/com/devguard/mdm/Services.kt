@@ -233,11 +233,11 @@ class GuardService : Service() {
         val f = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, f, RECEIVER_EXPORTED) else registerReceiver(receiver, f)
         runCatching { Holds.migrate(this) } // before screen time / approval act on pauses (B-02)
-        Thread {
-            Blocklist.sweep(this)
-            if (Prefs.getFlag(this, Prefs.CHROME_ONLY)) ChromePolicy.otherBrowsers(this).forEach { ChromePolicy.onInstalled(this, it) }
-            Approval.sweep(this)
-        }.start()
+        work.execute { // a crash here used to kill the whole service (uncaught in a raw Thread)
+            runCatching { Blocklist.sweep(this) }
+            runCatching { if (Prefs.getFlag(this, Prefs.CHROME_ONLY)) ChromePolicy.otherBrowsers(this).forEach { ChromePolicy.onInstalled(this, it) } }
+            runCatching { Approval.sweep(this) }
+        }
 
         // Private DNS lock: revert any edit (vivo Settings ignores the "Lock Private DNS" restriction).
         for (key in listOf("private_dns_mode", "private_dns_specifier")) {

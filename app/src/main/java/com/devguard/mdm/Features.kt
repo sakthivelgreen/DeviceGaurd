@@ -567,9 +567,7 @@ object Blocklist {
         (ai.flags and ApplicationInfo.FLAG_INSTALLED) != 0
     }.getOrDefault(false)
 
-    fun label(c: Context, pkg: String): String = PRESETS[pkg] ?: runCatching {
-        c.packageManager.getApplicationLabel(c.packageManager.getApplicationInfo(pkg, PackageManager.MATCH_UNINSTALLED_PACKAGES)).toString()
-    }.getOrDefault(pkg)
+    fun label(c: Context, pkg: String): String = PRESETS[pkg] ?: Apps.label(c, pkg)
 
     fun add(c: Context, pkgs: Collection<String>) {
         Prefs.updateSet(c, Prefs.K_BLOCKED_PKGS) { it + pkgs }
@@ -612,8 +610,7 @@ object Blocklist {
 
 /** Approved-apps mode: newly installed apps stay paused until the admin approves them. */
 object Approval {
-    private fun installed(c: Context) =
-        c.packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).map { it.packageName }.toSet()
+    private fun installed(c: Context) = Apps.packages(c).toSet()
 
     fun enable(c: Context) {
         // Everything already on the phone counts as approved.
@@ -655,8 +652,8 @@ object Approval {
         if (!Prefs.approvalMode(c)) return
         val approved = Prefs.approved(c)
         val claimed = Prefs.autoSuspended(c)
-        c.packageManager.getInstalledApplications(0)
-            .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 && it.packageName != c.packageName }
+        Apps.list(c)
+            .filter { !Apps.isSystem(it) && it.packageName != c.packageName }
             .filter { it.packageName !in approved && it.packageName !in claimed }
             .forEach { pause(c, it.packageName) }
     }

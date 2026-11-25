@@ -37,10 +37,7 @@ class SettingsActivity : BaseActivity() {
             Guard.require(this, "import a profile (it can change or turn off your website filters)") {
                 confirm("Import this profile?", "Its restrictions, filters, lists and schedules replace the current ones. Your PIN stays the same.", "Import") {
                     toast("Importing…")
-                    Thread {
-                        val msg = runCatching { Profile.import(this, text) }.getOrElse { it.message ?: "Import failed" }
-                        runOnUiThread { toast(msg); if (!isFinishing) render() }
-                    }.start()
+                    inBackground({ Profile.import(this, text) }) { msg -> toast(msg); render() }
                 }
             }
         }
@@ -173,27 +170,18 @@ class SettingsActivity : BaseActivity() {
 
     private fun checkNow() {
         toast("Checking…")
-        Thread {
-            val r = runCatching { Updater.latest(this) }
-            runOnUiThread {
-                r.onFailure { toast(it.message) }
-                r.onSuccess { rel ->
-                    val cur = Updater.currentCode(this)
-                    if (rel.code <= cur) toast("You have the latest version ($cur)")
-                    else MaterialAlertDialogBuilder(this).setTitle("Update available: ${rel.tag}")
-                        .setMessage((rel.notes.ifBlank { "New version ${rel.code} (you have $cur)." }) +
-                            "\n\nIt installs silently; DeviceGuard restarts afterwards.")
-                        .setPositiveButton("Install") { _, _ ->
-                            toast("Downloading…")
-                            Thread {
-                                val err = Updater.install(this, rel)
-                                runOnUiThread { toast(err ?: "Installing… DeviceGuard will restart") }
-                            }.start()
-                        }
-                        .setNegativeButton("Later", null).show()
+        inBackground({ Updater.latest(this) }) { rel ->
+            val cur = Updater.currentCode(this)
+            if (rel.code <= cur) toast("You have the latest version ($cur)")
+            else MaterialAlertDialogBuilder(this).setTitle("Update available: ${rel.tag}")
+                .setMessage((rel.notes.ifBlank { "New version ${rel.code} (you have $cur)." }) +
+                    "\n\nIt installs silently; DeviceGuard restarts afterwards.")
+                .setPositiveButton("Install") { _, _ ->
+                    toast("Downloading…")
+                    inBackground({ Updater.install(this, rel) }) { err -> toast(err ?: "Installing… DeviceGuard will restart") }
                 }
-            }
-        }.start()
+                .setNegativeButton("Later", null).show()
+        }
     }
 
     private fun provisioningDialog() {

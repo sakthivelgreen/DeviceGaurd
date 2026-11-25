@@ -1,7 +1,6 @@
 // DeviceGuard MDM — Author: Sakthivel J
 package com.devguard.mdm
 
-import android.content.pm.ApplicationInfo
 import android.text.InputType
 import android.view.Gravity
 import android.view.ViewGroup.LayoutParams.WRAP_CONTENT
@@ -35,13 +34,11 @@ class BlockListActivity : BaseActivity() {
         }
     }
 
-    private fun pickInstalled() {
-        val pm = packageManager
-        val apps = pm.getInstalledApplications(0)
-            .filter { (it.flags and ApplicationInfo.FLAG_SYSTEM) == 0 && it.packageName != packageName && it.packageName !in Prefs.blockedPkgs(this) }
-            .map { it.packageName to pm.getApplicationLabel(it).toString() }
-            .sortedBy { it.second.lowercase() }
-        if (apps.isEmpty()) { toast("No installed apps to choose from"); return }
+    private fun pickInstalled() = inBackground({
+        val blocked = Prefs.blockedPkgs(this)
+        Apps.userApps(this).map { it.first.packageName to it.second }.filter { it.first !in blocked }
+    }) { apps ->
+        if (apps.isEmpty()) { toast("No installed apps to choose from"); return@inBackground }
         val pick = BooleanArray(apps.size)
         MaterialAlertDialogBuilder(this).setTitle("Choose apps to block")
             .setMultiChoiceItems(apps.map { "${it.second}\n${it.first}" }.toTypedArray(), pick) { _, i, v -> pick[i] = v }
@@ -70,6 +67,7 @@ class BlockListActivity : BaseActivity() {
                     isSingleLine = true
                     inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
                 }
+                input.keepText("blockAddApp") // B-07: typed text survives redraws
                 addView(input)
                 button("Block this app") {
                     val p = Blocklist.parse(input.text.toString())
