@@ -23,6 +23,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [S-04](#s-04-weak-brute-force-protection) | P2 | [x] | Weak brute-force protection (4-digit PIN, in-memory lockout) |
 | [B-05](#b-05-clock-changes-defeat-time-rules) | P2 | [x] | Changing the clock defeats screen time and session timeout |
 | [P-01](#p-01-heavy-binder-work-on-the-main-thread) | P2 | [x] | Heavy system calls on the main thread (dashboard, export, release, Apps list) |
+| [P-02](#p-02-bloatware-and-background-screens-build-on-the-main-thread) | P2 | [ ] | Bloatware (1.1 s) and Background apps (0.6 s) screens build on the main thread |
 | [B-06](#b-06-failures-are-hidden) | P2 | [x] | Failures are hidden; uninstall/update results go nowhere |
 | [B-07](#b-07-typed-text-lost-on-page-refresh) | P2 | [ ] | Typed text lost when a page re-renders |
 | [B-08](#b-08-concurrent-preference-writes) | P2 | [x] | Concurrent read-modify-write of preference sets can lose updates |
@@ -111,8 +112,19 @@ Every DevicePolicyManager / PackageManager question is a call into Android's sys
 - [x] `inBackground(work) { result -> }` in `Ui.kt`: shared thread pool, result only delivered if the screen is still open, errors as a toast. [D-03](#d-03-background-threads) converts the remaining `Thread { }` copies to it.
 - [x] Release: `Mdm.releasing` flag. While set, `Holds.set(on = true)` refuses, the package-added receiver ignores unhides, and `ensureBaseline` doesn't re-protect, so nothing re-hides an app or re-blocks DeviceGuard's uninstall while release runs. On failure the flag is cleared (still Device Owner) and the dialog says to tap Release again.
 - [x] Built, installed (2026-11-25): still Device Owner, no crash.
-- [ ] Check on the phone: frame stats after using the dashboard, Apps list (scroll with system apps shown) and Restrictions; export a profile and check its content.
+- [x] Checked on the phone (2026-11-25, dashboard, Apps with system apps, Websites, Restrictions, export): janky frames 3.25% → 1.20%, 90th percentile 26 → 17 ms, 99th 150 → 97 ms, slow UI-thread frames 2.3% → 0.7% of frames. Screen open times: Apps 0.10–0.15 s, Restrictions 0.22–0.27 s, dashboard 0.27 s. Export: 22 settings, no secrets, 39 manual hides, 2 restrictions (matches `dumpsys device_policy`).
+- The one remaining long frame (1.1 s) was the Bloatware screen opening, which P-01 didn't cover: see [P-02](#p-02-bloatware-and-background-screens-build-on-the-main-thread).
 - Release is NOT tested on the phone on purpose: it removes Device Owner, which needs a factory reset to get back. Reviewed in code only.
+
+### P-02 Bloatware and Background screens build on the main thread
+**P2 · [ ]** · `BloatActivity.kt`, `BackgroundActivity.kt`, `Bloat.kt`
+
+Found while checking P-01 (2026-11-25): opening **Bloatware** took 1.12 s (one 1.1 s frame, 53 frames skipped) and **Background apps** 0.61 s.
+
+- `BloatActivity.onResume` lists ~355 system apps, classifies them, and builds every row at once in a ScrollView: label, hidden state and icon for each, all on the main thread.
+- `BackgroundActivity.render` reads installed apps, labels, stopped / OS-restricted state and icons on the main thread, and re-runs after each change.
+
+Fix: read the list and each app's state with `inBackground`, then build the rows (same pattern as the Apps list); load icons lazily or in the background. Overlaps [D-02](#d-02-installed-apps-and-labels).
 
 ---
 
