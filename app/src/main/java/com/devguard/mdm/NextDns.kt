@@ -25,7 +25,7 @@ object NextDns {
 
     data class State(val categories: Map<String, Boolean>, val safeSearch: Boolean, val youtube: Boolean, val blockBypass: Boolean)
 
-    fun key(c: Context) = Prefs.getStr(c, Prefs.NEXTDNS_KEY)?.trim()?.takeIf { it.isNotEmpty() }
+    fun key(c: Context) = Secrets.get(c, Prefs.NEXTDNS_KEY)?.trim()?.takeIf { it.isNotEmpty() } // encrypted (S-03)
     fun id(c: Context) = Prefs.getStr(c, Prefs.NEXTDNS_ID)?.trim()?.takeIf { it.isNotEmpty() }
     fun configured(c: Context) = key(c) != null && id(c) != null
     fun host(c: Context) = "${id(c)}.dns.nextdns.io"

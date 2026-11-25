@@ -20,7 +20,7 @@ object Updater {
     data class Release(val code: Int, val tag: String, val apiAssetUrl: String, val downloadUrl: String, val notes: String)
 
     fun repo(c: Context) = Prefs.getStr(c, Prefs.UPD_REPO)?.takeIf { it.contains('/') } ?: DEFAULT_REPO
-    private fun token(c: Context) = Prefs.getStr(c, Prefs.UPD_TOKEN)?.takeIf { it.isNotBlank() }
+    private fun token(c: Context) = Secrets.get(c, Prefs.UPD_TOKEN)?.takeIf { it.isNotBlank() } // encrypted (S-03)
 
     fun currentCode(c: Context): Int = c.packageManager.getPackageInfo(c.packageName, 0).longVersionCode.toInt()
 

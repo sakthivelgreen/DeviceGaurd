@@ -19,7 +19,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [B-03](#b-03-filter-guard-confirmation-not-tied-to-the-action) | P1 | [x] | Filter guard confirmation isn't tied to the action |
 | [S-02](#s-02-filter-guard-bypass-paths) | P1 | [x] | Filter guard bypass paths (profile import, Danger zone, NextDNS) |
 | [B-04](#b-04-adb-pin-reset-never-tested) | P1 | [x] | ADB PIN reset never tested end-to-end |
-| [S-03](#s-03-secrets-stored-in-plain-text) | P2 | [ ] | API key, GitHub token and TOTP secret stored in plain text |
+| [S-03](#s-03-secrets-stored-in-plain-text) | P2 | [x] | API key, GitHub token and TOTP secret stored in plain text |
 | [S-04](#s-04-weak-brute-force-protection) | P2 | [x] | Weak brute-force protection (4-digit PIN, in-memory lockout) |
 | [B-05](#b-05-clock-changes-defeat-time-rules) | P2 | [x] | Changing the clock defeats screen time and session timeout |
 | [P-01](#p-01-heavy-binder-work-on-the-main-thread) | P2 | [ ] | Heavy system calls on the main thread (dashboard, export, release, Apps list) |
@@ -71,9 +71,14 @@ The guard only protects the Websites screen. Ways around it:
 - [-] **NextDNS switches:** stay unguarded (user request, 2026-11-23).
 
 ### S-03 Secrets stored in plain text
-**P2 · [ ]** · `Prefs.kt`, `NextDns.kt`, `Updater.kt`, `Totp.kt`
+**P2 · [x] fixed 2026-11-25 (`Secrets.kt`)** · `Prefs.kt`, `NextDns.kt`, `Updater.kt`, `Totp.kt`
 
-The NextDNS API key, GitHub token and TOTP secret are plain SharedPreferences values. The debug build is debuggable, so `run-as` reads them. Fix: encrypt with an Android Keystore AES key (or Tink); keep the hash-only approach for PIN and recovery code.
+The NextDNS API key, GitHub token and TOTP secret are plain SharedPreferences values. The debug build is debuggable, so `run-as` reads them. - [x] `Secrets.kt`: AES-256-GCM with a non-exportable Android Keystore key; stored as `enc1:` + Base64(IV + ciphertext)
+- [x] All reads/writes go through `Secrets.get/put` (NextDns, Updater, Totp, Settings, Websites); old plain-text values are encrypted on update (`Mdm.ensureBaseline` → `Secrets.migrate`)
+- [x] Verified on the phone: `nextdnsKey` and `totpSecret` changed from plain text to `enc1:…` after the update (2026-11-25)
+- [x] `Totp.verify` fails closed if the secret can't be decrypted
+- [ ] Check on the phone: NextDNS categories load, and unlock with PIN + two-factor code works
+- Limit: with the **debug** build, someone with ADB could still run code as the app and use the Keystore key. Only the release build (not debuggable) closes that.
 
 ### S-04 Weak brute-force protection
 **P2 · [x] fixed 2026-11-24** · `Prefs.kt:180-218`, `MainActivity.kt:59`
@@ -267,3 +272,4 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 | B-04 | 2026-11-24 | `0676138` | ADB PIN reset verified on the phone |
 | B-02 / A-01 | 2026-11-24 | see git log | Holds.kt: per-feature pause/hide lists; migration verified on the phone |
 | S-04, B-05, B-06, B-08, R-01, R-02, D-01, D-04 | 2026-11-24 | see git log | Group 2 |
+| S-03 | 2026-11-25 | see git log | Secrets encrypted with Android Keystore |

@@ -98,7 +98,7 @@ fun Activity.setupTotpDialog(then: () -> Unit) {
     MaterialAlertDialogBuilder(this).setTitle("Two-factor unlock")
         .setView(android.widget.ScrollView(this).apply { addView(col) })
         .setPositiveButton("Turn on") { _, _ ->
-            if (Totp.verify(secret, e.text.toString())) { Totp.enable(this, secret); toast("Two-factor unlock is on"); then() }
+            if (Totp.verify(secret, e.text.toString())) act { Totp.enable(this, secret); toast("Two-factor unlock is on"); then() }
             else toast("That code didn't match. Try again.")
         }
         .setNegativeButton("Cancel", null).show()

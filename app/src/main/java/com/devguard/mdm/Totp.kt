@@ -19,15 +19,15 @@ import javax.crypto.spec.SecretKeySpec
 object Totp {
     private const val B32 = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567"
 
-    fun enabled(c: Context) = Prefs.getStr(c, Prefs.TOTP_SECRET) != null
+    fun enabled(c: Context) = Secrets.has(c, Prefs.TOTP_SECRET)
 
     fun newSecret(): String {
         val b = ByteArray(20).also { SecureRandom().nextBytes(it) }
         return base32(b)
     }
 
-    fun enable(c: Context, secret: String) = Prefs.setStr(c, Prefs.TOTP_SECRET, secret)
-    fun disable(c: Context) = Prefs.setStr(c, Prefs.TOTP_SECRET, null)
+    fun enable(c: Context, secret: String) = Secrets.put(c, Prefs.TOTP_SECRET, secret) // encrypted (S-03)
+    fun disable(c: Context) = Secrets.put(c, Prefs.TOTP_SECRET, null)
 
     fun uri(secret: String) =
         "otpauth://totp/DeviceGuard:Admin?secret=$secret&issuer=DeviceGuard&algorithm=SHA1&digits=6&period=30"
@@ -40,7 +40,13 @@ object Totp {
         return (-1..1).any { code(secret, step + it) == c }
     }
 
-    fun verify(ctx: Context, code: String): Boolean = Prefs.getStr(ctx, Prefs.TOTP_SECRET)?.let { verify(it, code) } ?: true
+    /** True if two-factor is off, or [code] is right. Fails closed: an unreadable secret rejects every code
+     *  (the recovery code or the PC reset still turn two-factor off). */
+    fun verify(ctx: Context, code: String): Boolean {
+        if (!enabled(ctx)) return true
+        val secret = Secrets.get(ctx, Prefs.TOTP_SECRET) ?: return false
+        return verify(secret, code)
+    }
 
     private fun code(secret: String, step: Long): String {
         val mac = Mac.getInstance("HmacSHA1").apply { init(SecretKeySpec(unbase32(secret), "HmacSHA1")) }

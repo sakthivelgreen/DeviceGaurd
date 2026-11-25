@@ -114,7 +114,7 @@ class SettingsActivity : BaseActivity() {
             card("App updates") {
                 text("Installs new versions from GitHub Releases silently. Tag each release build-<versionCode> (e.g. build-3) and attach the release APK.", 13f).alpha = 0.8f
                 text("Repository: ${Updater.repo(context)}", 13f, bold = true)
-                text(if (Prefs.getStr(context, Prefs.UPD_TOKEN).isNullOrBlank()) "Token: not set (needed for a private repo)" else "Token: saved", 12f).alpha = 0.7f
+                text(if (!Secrets.has(context, Prefs.UPD_TOKEN)) "Token: not set (needed for a private repo)" else "Token: saved (encrypted)", 12f).alpha = 0.7f
                 button("Repository & token…", outlined = true) { updateSettings() }
                 switchRow("Check daily (auto-install)", "Checked when the screen turns on, at most once a day", Prefs.getFlag(context, Prefs.UPD_AUTO), owner) { _, on ->
                     Prefs.setFlag(this@SettingsActivity, Prefs.UPD_AUTO, on); GuardService.refresh(this@SettingsActivity); true
@@ -159,10 +159,10 @@ class SettingsActivity : BaseActivity() {
         MaterialAlertDialogBuilder(this).setTitle("App updates").setView(col)
             .setPositiveButton("Save") { _, _ ->
                 Prefs.setStr(this, Prefs.UPD_REPO, repo.text.toString().trim())
-                if (token.text.isNotBlank()) Prefs.setStr(this, Prefs.UPD_TOKEN, token.text.toString().trim())
+                if (token.text.isNotBlank()) act { Secrets.put(this, Prefs.UPD_TOKEN, token.text.toString().trim()) }
                 render()
             }
-            .setNeutralButton("Remove token") { _, _ -> Prefs.setStr(this, Prefs.UPD_TOKEN, null); render() }
+            .setNeutralButton("Remove token") { _, _ -> Secrets.put(this, Prefs.UPD_TOKEN, null); render() }
             .setNegativeButton("Cancel", null).show()
     }
 

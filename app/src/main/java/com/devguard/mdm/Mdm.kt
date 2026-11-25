@@ -91,6 +91,7 @@ class Mdm(private val c: Context) {
         runCatching { dpm.setUninstallBlocked(admin, pkg, true) }
         Branding.apply(c) // organization name + lock screen / support messages
         runCatching { Holds.migrate(c) } // one-time: record existing manual pauses/hides (B-02)
+        runCatching { Secrets.migrate(c) } // encrypt secrets stored in plain text by older versions (S-03)
         if (Build.VERSION.SDK_INT >= 33) runCatching {
             dpm.setPermissionGrantState(
                 admin, pkg, Manifest.permission.POST_NOTIFICATIONS,

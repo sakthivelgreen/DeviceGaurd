@@ -58,7 +58,7 @@ class WebActivity : BaseActivity() {
         MaterialAlertDialogBuilder(this).setTitle("Connect NextDNS").setView(col)
             .setPositiveButton("Save") { _, _ ->
                 Prefs.setStr(this, Prefs.NEXTDNS_ID, id.text.toString().trim())
-                if (key.text.isNotBlank()) Prefs.setStr(this, Prefs.NEXTDNS_KEY, key.text.toString().trim())
+                if (key.text.isNotBlank()) act { Secrets.put(this, Prefs.NEXTDNS_KEY, key.text.toString().trim()) }
                 nd = null; ndError = null
                 render(); loadNextDns()
             }
