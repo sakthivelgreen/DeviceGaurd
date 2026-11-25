@@ -60,6 +60,8 @@ object Updater {
 
     /** Downloads and silently installs [r]. Returns null when the install was handed to Android, or an error. */
     fun install(c: Context, r: Release): String? = runCatching {
+        // The debug build (testOnly, ADB escape hatch) stays on the development phone: never replace it with a release.
+        if (BuildConfig.DEBUG) return "This is the debug build: releases are for other phones. Update it with adb install."
         val file = File(c.cacheDir, "update.apk")
         // Public release asset: github.com redirects (https → https) to its download server; followed automatically.
         val conn = open(r.downloadUrl, "application/octet-stream")
@@ -106,7 +108,7 @@ object Updater {
 
     /** Called on screen on: at most once a day, if auto-update is on. The day only counts once GitHub answered. */
     fun autoCheck(c: Context) {
-        if (!Prefs.getFlag(c, Prefs.UPD_AUTO) || !Mdm(c).isOwner) return
+        if (BuildConfig.DEBUG || !Prefs.getFlag(c, Prefs.UPD_AUTO) || !Mdm(c).isOwner) return // never on the debug build
         val now = System.currentTimeMillis()
         if (now - Prefs.getLong(c, Prefs.UPD_LAST) < 24 * 3600_000L) return
         if (now - lastTry < 3600_000L) return

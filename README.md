@@ -1,7 +1,7 @@
 # DeviceGuard MDM
 
 **Author:** Sakthivel J
-**Package:** `com.devguard.mdm` · **Version:** 2.0 (versionCode 2) · **Min Android:** 10 (API 29) · **Target/Compile:** Android 16 (API 36)
+**Package:** `com.devguard.mdm` · **Version:** 2.1 (versionCode 3) · **Min Android:** 10 (API 29) · **Target/Compile:** Android 16 (API 36)
 **Language:** Kotlin · **UI:** Android Views built in code (no XML layouts) with Material 3 components
 
 DeviceGuard MDM is a single-phone Mobile Device Management app. It runs as Android **Device Owner**, which lets it control the Play Store, block or remove apps, filter websites, lock down device settings, clean up bloatware and run the phone in kiosk mode. You manage everything on the phone, behind an admin PIN; no server is needed.
@@ -524,7 +524,7 @@ Dashboard → **Settings**:
   Android always shows that a Device Owner manages the phone. Only these texts can change. They're applied at every start, after updates and after a profile import; lock screen changes show after the screen turns off and on.
 - **Backup & restore profile:** *Export profile…* saves a `deviceguard-profile-YYYYMMDD.json` (restrictions, hidden/suspended/uninstall-blocked apps, filters, blocked apps and sites, screen time, background list, Chrome rules, Wi-Fi list, update policy). *Import profile…* applies one. PIN, recovery code, authenticator secret and tokens are never exported.
 - **Set up another phone (QR code):** the APK link is filled in with the newest GitHub release (`https://github.com/sakthivelgreen/DeviceGaurd/releases/latest/download/DeviceGuard.apk`); add Wi-Fi if needed, then *Show QR*. On the new phone: welcome screen → tap 6 times → scan. Android downloads DeviceGuard, checks its signature and makes it Device Owner. Then set the PIN and import your profile. The QR code carries this app's signing-key fingerprint, so only your APK is accepted.
-- **App updates:** repository (default `sakthivelgreen/DeviceGaurd`, public, so no token). The check uses github.com's `releases/latest` redirect, not GitHub's API (which allows only 60 calls an hour per network); only APKs signed with this app's key, newer than the installed version and matching the `build-<versionCode>` tag are installed. *Check for updates now*, or turn on *Check daily (auto-install)*. Updates install silently as Device Owner.
+- **App updates:** repository (default `sakthivelgreen/DeviceGaurd`, public, so no token). The check uses github.com's `releases/latest` redirect, not GitHub's API (which allows only 60 calls an hour per network); only APKs signed with this app's key, newer than the installed version and matching the `build-<versionCode>` tag are installed. *Check for updates now*, or turn on *Check daily (auto-install)*. Updates install silently as Device Owner. Debug builds never install a release (the development phone keeps its ADB escape hatch).
 
 ### NextDNS categories
 Websites → **NextDNS categories** → *Connect NextDNS…* → Profile ID (nextdns.io → Setup, e.g. `abc123`) + API key (nextdns.io → Account → API). Then:
@@ -876,5 +876,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-25 | **R-03: VPN filter removed** (it made many apps fail to open). Your site list is blocked in every app through NextDNS (Send my blocked sites to NextDNS) and in Chrome through the Chrome rules. On update, DeviceGuard clears itself as always-on VPN if an older version set it, and deletes the old VPN settings. About 250 lines and the VPN consent flow are gone. |
 | 2026-11-25 | `ISSUES.md` removed from git and git-ignored; it stays on the development PC as the local issue tracker. |
 | 2026-11-25 | **Public repo updates:** the updater no longer uses a GitHub token (deleted on update) and downloads the release APK directly; the latest version is read from github.com's `releases/latest` redirect instead of the API, whose 60-an-hour limit this network had already used up. The setup QR code's APK link defaults to the newest release. |
+| 2026-11-25 | **v2.1 (versionCode 3):** first public release build for other phones. Debug builds never install releases (no auto-install, Install explains why), so the development phone stays on the debug build. |
 
 © Sakthivel J
