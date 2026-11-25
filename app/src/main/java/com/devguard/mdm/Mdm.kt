@@ -100,6 +100,7 @@ class Mdm(private val c: Context) {
         runCatching { Holds.migrate(c) } // one-time: record existing manual pauses/hides (B-02)
         runCatching { Secrets.migrate(c) } // encrypt secrets stored in plain text by older versions (S-03)
         runCatching { WebFilter.removeLegacyVpn(c) } // the VPN filter was removed (R-03)
+        runCatching { Updater.removeLegacyToken(c) } // public repo: no GitHub token needed
         if (Build.VERSION.SDK_INT >= 33) runCatching {
             dpm.setPermissionGrantState(
                 admin, pkg, Manifest.permission.POST_NOTIFICATIONS,

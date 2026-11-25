@@ -109,15 +109,15 @@ class SettingsActivity : BaseActivity() {
             card("Set up another phone (QR code)") {
                 text("On a new or factory-reset phone, tap the welcome screen 6 times to open the QR reader, then scan this code. " +
                     "The phone downloads DeviceGuard and makes it Device Owner, with no PC needed.", 13f).alpha = 0.8f
-                text("Needs a public direct-download link to the RELEASE build (tools\\release.ps1 builds it). A private GitHub repo link won't work.", 12f, color = Palette.ORANGE)
+                text("Uses the newest GitHub release (published from the PC with tools\\release.ps1 -Upload). The QR code also carries this app's key fingerprint, so a new phone only accepts your APK.", 12f).alpha = 0.7f
                 button("Show setup QR code") { provisioningDialog() }
             }
 
             card("App updates") {
                 text("Installs new versions from GitHub Releases silently. Tag each release build-<versionCode> (e.g. build-3) and attach the release APK.", 13f).alpha = 0.8f
                 text("Repository: ${Updater.repo(context)}", 13f, bold = true)
-                text(if (!Secrets.has(context, Prefs.UPD_TOKEN)) "Token: not set (needed for a private repo)" else "Token: saved (encrypted)", 12f).alpha = 0.7f
-                button("Repository & token…", outlined = true) { updateSettings() }
+                text("Public repo: no token needed. Only APKs signed with this app's key are installed.", 12f).alpha = 0.7f
+                button("Repository…", outlined = true) { updateSettings() }
                 switchRow("Check daily (auto-install)", "Checked when the screen turns on, at most once a day", Prefs.getFlag(context, Prefs.UPD_AUTO), owner) { _, on ->
                     Prefs.setFlag(this@SettingsActivity, Prefs.UPD_AUTO, on); GuardService.refresh(this@SettingsActivity); true
                 }
@@ -150,21 +150,12 @@ class SettingsActivity : BaseActivity() {
     private fun updateSettings() {
         val col = column()
         val repo = EditText(this).apply { hint = "owner/repo"; setText(Updater.repo(this@SettingsActivity)); isSingleLine = true }
-        val token = EditText(this).apply {
-            hint = "GitHub token (read-only, optional)"
-            isSingleLine = true
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        col.text("Repository", 12f).alpha = 0.7f; col.addView(repo)
-        col.text("Token: GitHub → Settings → Developer settings → Fine-grained token → this repo → Contents: Read-only. Leave empty to keep the saved one.", 12f).alpha = 0.7f
-        col.addView(token)
+        col.text("Repository (public GitHub repo with build-<versionCode> releases)", 12f).alpha = 0.7f; col.addView(repo)
         MaterialAlertDialogBuilder(this).setTitle("App updates").setView(col)
             .setPositiveButton("Save") { _, _ ->
                 Prefs.setStr(this, Prefs.UPD_REPO, repo.text.toString().trim())
-                if (token.text.isNotBlank()) act { Secrets.put(this, Prefs.UPD_TOKEN, token.text.toString().trim()) }
                 render()
             }
-            .setNeutralButton("Remove token") { _, _ -> Secrets.put(this, Prefs.UPD_TOKEN, null); render() }
             .setNegativeButton("Cancel", null).show()
     }
 
@@ -188,7 +179,7 @@ class SettingsActivity : BaseActivity() {
         val col = column()
         val url = EditText(this).apply {
             hint = "https://…/DeviceGuard.apk"
-            setText(Prefs.getStr(this@SettingsActivity, Prefs.PROV_URL) ?: "")
+            setText(Prefs.getStr(this@SettingsActivity, Prefs.PROV_URL) ?: Updater.latestApkUrl(this@SettingsActivity))
             isSingleLine = true
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }

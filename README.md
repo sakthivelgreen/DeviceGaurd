@@ -523,8 +523,8 @@ Dashboard → **Settings**:
   | Device admin info | This phone is managed by Sakthivel J with DeviceGuard MDM. | Settings → Security → Device admin apps |
   Android always shows that a Device Owner manages the phone. Only these texts can change. They're applied at every start, after updates and after a profile import; lock screen changes show after the screen turns off and on.
 - **Backup & restore profile:** *Export profile…* saves a `deviceguard-profile-YYYYMMDD.json` (restrictions, hidden/suspended/uninstall-blocked apps, filters, blocked apps and sites, screen time, background list, Chrome rules, Wi-Fi list, update policy). *Import profile…* applies one. PIN, recovery code, authenticator secret and tokens are never exported.
-- **Set up another phone (QR code):** enter a public direct-download link to the **release** APK (and optionally Wi-Fi), then *Show QR*. On the new phone: welcome screen → tap 6 times → scan. Android downloads DeviceGuard, checks its signature and makes it Device Owner. Then set the PIN and import your profile. A private GitHub link won't work; use a public release or any direct-download host.
-- **App updates:** repository (default `sakthivelgreen/DeviceGaurd`) and, for a private repo, a fine-grained GitHub token with *Contents: Read-only*. *Check for updates now*, or turn on *Check daily (auto-install)*. Updates install silently as Device Owner.
+- **Set up another phone (QR code):** the APK link is filled in with the newest GitHub release (`https://github.com/sakthivelgreen/DeviceGaurd/releases/latest/download/DeviceGuard.apk`); add Wi-Fi if needed, then *Show QR*. On the new phone: welcome screen → tap 6 times → scan. Android downloads DeviceGuard, checks its signature and makes it Device Owner. Then set the PIN and import your profile. The QR code carries this app's signing-key fingerprint, so only your APK is accepted.
+- **App updates:** repository (default `sakthivelgreen/DeviceGaurd`, public, so no token). GitHub allows 60 checks an hour per phone without an account; only APKs signed with this app's key, newer than the installed version and matching the `build-<versionCode>` tag are installed. *Check for updates now*, or turn on *Check daily (auto-install)*. Updates install silently as Device Owner.
 
 ### NextDNS categories
 Websites → **NextDNS categories** → *Connect NextDNS…* → Profile ID (nextdns.io → Setup, e.g. `abc123`) + API key (nextdns.io → Account → API). Then:
@@ -612,7 +612,7 @@ MDM_App/
             ├── Guard.kt                 Filter guard: puzzle, maths, cooling-off wait (`Guard.require`)
             ├── AppControl.kt            Force stop (hide/unhide), silent uninstall, no-background list, Restricted-mode ADB commands
             ├── Notify.kt                Notification channels + helper; InstallResultReceiver (uninstall/update failures)
-            ├── Secrets.kt               Encrypts the NextDNS key, GitHub token and two-factor secret (Android Keystore, AES-256-GCM)
+            ├── Secrets.kt               Encrypts the NextDNS key and two-factor secret (Android Keystore, AES-256-GCM)
             ├── Holds.kt                 Who wants each app paused/hidden (manual, approval, screen time, Chrome-only, blocklist); applies the combined result
             ├── ScreenTime.kt            Limits, schedules, temporary unlock, usage queries, engine (evaluate)
             ├── ScreenTimeActivity.kt    Screen time screen + schedule editor
@@ -792,7 +792,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | **No Device Owner API for force stop or background restriction** | Force stop = `setApplicationHidden(true)` then `false` (hiding kills the app). `GuardService` ignores the resulting "package added" broadcast (`AppControl.isIgnored`). Android's Restricted mode (`RUN_ANY_IN_BACKGROUND` appop + `restricted` standby bucket) is ADB-only, so the app builds the commands. Reading the state needs the `GET_APP_OPS_STATS` grant. Check on each launcher that hide/unhide keeps the home-screen icon in place. |
 | **testOnly per build type** | The manifest uses `android:testOnly="${testOnly}"`: `true` for debug (ADB escape hatch), `false` for release (needed for QR provisioning and auto-update, because Android refuses to install testOnly APKs there). |
 | **Usage access is ADB/Settings only** | Device Owner can't grant itself usage access: `appops set com.devguard.mdm GET_USAGE_STATS allow` (one-time). |
-| **Private GitHub repo** | The auto-updater needs a read-only token. QR provisioning needs a public APK link (the setup wizard can't send a token). |
+| **Public GitHub repo** | The auto-updater and QR provisioning download releases without a token. Publishing (`tools\release.ps1 -Upload`) still needs your write token, kept on the PC; a release can't install on the phone unless it's signed with your keystore. |
 | **Chrome rules only work in Chrome** | Other browsers ignore Chrome policies, so **Allow only Chrome** hides other browsers (`ChromePolicy.setChromeOnly`) and `GuardService` hides newly installed ones (`ChromePolicy.isBrowser` = handles any `http` link). |
 | **Duplicate ADB device entries** | Wireless debugging can list the phone twice; use `adb -s <serial>`. |
 | **vivo account / App Clone / Private Space** | These count as accounts/users and block `set-device-owner`. Skip them in setup. |
@@ -875,5 +875,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-25 | Phone-specific details removed from the project: `DEVICE_INFO.md` (model, serial, addresses, accounts, app list) deleted and git-ignored; README no longer names the phone model or its IP. |
 | 2026-11-25 | **R-03: VPN filter removed** (it made many apps fail to open). Your site list is blocked in every app through NextDNS (Send my blocked sites to NextDNS) and in Chrome through the Chrome rules. On update, DeviceGuard clears itself as always-on VPN if an older version set it, and deletes the old VPN settings. About 250 lines and the VPN consent flow are gone. |
 | 2026-11-25 | `ISSUES.md` removed from git and git-ignored; it stays on the development PC as the local issue tracker. |
+| 2026-11-25 | **Public repo updates:** the updater no longer uses a GitHub token (deleted on update) and downloads the release APK directly; clear message when GitHub's 60-checks-an-hour limit is hit. The setup QR code's APK link defaults to the newest release. |
 
 © Sakthivel J

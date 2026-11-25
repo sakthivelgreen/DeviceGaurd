@@ -14,33 +14,38 @@ import java.security.MessageDigest
 
 /**
  * Auto-update from GitHub Releases. Convention: release tag `build-<versionCode>` (e.g. build-3) with one
- * `.apk` asset (the RELEASE build, signed with the same key). Private repos need a read-only token.
- * As Device Owner the install is silent.
+ * `.apk` asset named DeviceGuard.apk (the RELEASE build, signed with the same key). The repo is public, so no
+ * token is needed (GitHub allows 60 unauthenticated checks an hour per phone). As Device Owner the install is silent.
+ * Only APKs signed with this app's key are installed (see [check]); publishing needs the write token on the PC.
  */
 object Updater {
     const val DEFAULT_REPO = "sakthivelgreen/DeviceGaurd"
 
-    data class Release(val code: Int, val tag: String, val apiAssetUrl: String, val downloadUrl: String, val notes: String)
+    data class Release(val code: Int, val tag: String, val downloadUrl: String, val notes: String)
 
     fun repo(c: Context) = Prefs.getStr(c, Prefs.UPD_REPO)?.takeIf { it.contains('/') } ?: DEFAULT_REPO
-    private fun token(c: Context) = Secrets.get(c, Prefs.UPD_TOKEN)?.takeIf { it.isNotBlank() } // encrypted (S-03)
+
+    /** Direct link to the newest release APK (for the setup QR code). */
+    fun latestApkUrl(c: Context) = "https://github.com/${repo(c)}/releases/latest/download/DeviceGuard.apk"
+
+    /** The read-only token older versions stored for the private repo isn't used any more: delete it. */
+    fun removeLegacyToken(c: Context) { if (Secrets.has(c, Prefs.UPD_TOKEN)) Secrets.put(c, Prefs.UPD_TOKEN, null) }
 
     fun currentCode(c: Context): Int = c.packageManager.getPackageInfo(c.packageName, 0).longVersionCode.toInt()
 
-    private fun open(url: String, token: String?, accept: String): HttpURLConnection =
+    private fun open(url: String, accept: String): HttpURLConnection =
         (URL(url).openConnection() as HttpURLConnection).apply {
             connectTimeout = 10_000; readTimeout = 30_000
             setRequestProperty("Accept", accept)
             setRequestProperty("User-Agent", "DeviceGuard-MDM")
-            if (token != null) setRequestProperty("Authorization", "Bearer $token")
         }
 
     /** Latest release, or throws with a readable message. Blocking. */
     fun latest(c: Context): Release {
-        val conn = open("https://api.github.com/repos/${repo(c)}/releases/latest", token(c), "application/vnd.github+json")
+        val conn = open("https://api.github.com/repos/${repo(c)}/releases/latest", "application/vnd.github+json")
         val code = conn.responseCode
-        if (code == 404) throw IllegalStateException(if (token(c) == null) "No release found, or the repo is private (add a token)" else "No release found")
-        if (code == 401 || code == 403) throw IllegalStateException("GitHub refused the token (HTTP $code)")
+        if (code == 404) throw IllegalStateException("No release found in ${repo(c)}")
+        if (code == 403 || code == 429) throw IllegalStateException("GitHub limit reached (60 checks an hour). Try again later.")
         if (code != 200) throw IllegalStateException("GitHub error HTTP $code")
         val o = JSONObject(conn.inputStream.bufferedReader().readText())
         val tag = o.optString("tag_name")
@@ -49,21 +54,14 @@ object Updater {
         val assets = o.optJSONArray("assets") ?: throw IllegalStateException("Release has no files")
         val apk = (0 until assets.length()).map { assets.getJSONObject(it) }.firstOrNull { it.optString("name").endsWith(".apk") }
             ?: throw IllegalStateException("Release has no .apk file")
-        return Release(vc, tag, apk.optString("url"), apk.optString("browser_download_url"), o.optString("body"))
+        return Release(vc, tag, apk.optString("browser_download_url"), o.optString("body"))
     }
 
     /** Downloads and silently installs [r]. Returns null when the install was handed to Android, or an error. */
     fun install(c: Context, r: Release): String? = runCatching {
         val file = File(c.cacheDir, "update.apk")
-        val tok = token(c)
-        // Private repo: API asset URL + token, then follow the redirect WITHOUT the token (signed storage URL).
-        var conn = if (tok != null) open(r.apiAssetUrl, tok, "application/octet-stream") else open(r.downloadUrl, null, "application/octet-stream")
-        conn.instanceFollowRedirects = false
-        var hops = 0
-        while (conn.responseCode in 300..399 && hops++ < 5) {
-            val next = conn.getHeaderField("Location")
-            conn = open(next, null, "application/octet-stream").apply { instanceFollowRedirects = false }
-        }
+        // Public release asset: github.com redirects (https → https) to its download server; followed automatically.
+        val conn = open(r.downloadUrl, "application/octet-stream")
         if (conn.responseCode != 200) return "Download failed (HTTP ${conn.responseCode})"
         conn.inputStream.use { inp -> file.outputStream().use { inp.copyTo(it) } }
         check(c, file, r)?.let { file.delete(); return it } // B-09: right app, newer version, same signing key
