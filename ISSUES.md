@@ -37,10 +37,10 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [D-03](#d-03-background-threads) | P2 | [x] | DRY: `Thread { runOnUiThread { } }` (28 copies) |
 | [D-04](#d-04-unlock-and-credential-logic) | P2 | [x] | DRY: PIN/2FA unlock, credential reset, PIN rules, hashing, lockout |
 | [D-05](#d-05-other-duplication) | P3 | [x] | DRY: DoT test, uninstall, ADB strings, guard helper, `Mdm(c)` |
-| [D-06](#d-06-two-preference-styles) | P3 | [ ] | DRY: two preference styles; export key lists can drift |
+| [D-06](#d-06-two-preference-styles) | P3 | [x] | DRY: two preference styles; export key lists can drift |
 | [A-01](#a-01-one-reconciler-for-app-state) | P2 | [x] | Architecture: one reconciler for suspended/hidden apps |
 | [A-02](#a-02-split-featureskt) | P3 | [x] | Architecture: split Features.kt (734 lines, 8 features) |
-| [A-03](#a-03-application-class-and-workmanager) | P3 | [ ] | Architecture: Application class + WorkManager for periodic jobs |
+| [A-03](#a-03-application-class-and-workmanager) | P3 | [~] | Architecture: Application class + WorkManager for periodic jobs |
 | [A-04](#a-04-tests-and-build) | P3 | [ ] | Unit tests for pure logic; enable R8 for release |
 | [A-05](#a-05-strings-and-ui) | P3 | [ ] | UI: strings.xml, partial re-render instead of full page rebuild |
 
@@ -270,9 +270,11 @@ Done: no `Thread { }` or `runOnUiThread` left in any screen. `GuardService`'s st
 - [x] `Mdm(c)` created in 51 places, `isOwner` re-queried each time; `hasRestriction` reads the whole restrictions bundle per key → read once per screen (done in P-01 via `Mdm.restrictions()`; every screen now reads `isOwner` once per render. `Mdm(c)` itself is cheap: it only looks up a system service)
 
 ### D-06 Two preference styles
-**P3 · [ ]** · `Prefs.kt`, `Profile.kt:14-18`
+**P3 · [x] done 2026-11-25** · `Prefs.kt`, `Profile.kt:14-18`
 
 Typed functions (`Prefs.domains`) and raw key constants (`Prefs.getFlag(c, Prefs.CHROME_ON)`) are mixed; `Profile.SECRET_KEYS` repeats key names as literal strings. Fix: one key definition per preference with flags (`secret`, `exportable`), so export/import can't drift.
+
+Done: every key is a constant in `Prefs` (`K_WEB_BLOCK`, `K_ST_SITES`, `K_FAMILY_DNS`, `K_PRIVATE_DNS_HOST`, `K_APPROVAL_MODE`, `K_KIOSK_ON`, `PROV_URL`; credential keys from one `credKeys()` helper). `Prefs.NOT_EXPORTED`, defined next to the keys, replaces `Profile.SECRET_KEYS` and is built from the key constants, `Secrets.KEYS`, `Session.STATE_KEYS` and the Holds keys. Export also skips any encrypted (`enc1:`) value, so a secret added later can't leak even if nobody lists it. `kioskOn` is no longer exported (device state).
 
 ---
 
@@ -289,10 +291,15 @@ Each feature declares which apps it wants suspended or hidden (manual, approval,
 One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Kiosk`, `Blocklist`, `Approval`. Done: one `.kt` file each (`onDomainsChanged` is in `WebFilter.kt`); `Features.kt` removed. Paths in older items still say `Features.kt`.
 
 ### A-03 Application class and WorkManager
-**P3 · [ ]**
+**P3 · [~] partly done 2026-11-25**
 
 - An `Application` subclass for notification channels, the `Mdm` instance and the app repository.
 - WorkManager for the daily update check and periodic checks, instead of everything on `TIME_TICK` inside the always-on service. Screen time re-reads all usage since midnight every minute; cache it.
+
+- [x] `DeviceGuardApp` (Application): creates all notification channels once per process start; `Notify.build` no longer creates a channel on every notification.
+- [x] Screen time reads today's usage incrementally (only events since the last check), with a full re-read every 10 minutes to self-correct and on a new day or clock change. The past-days view still reads each day fully.
+- [ ] WorkManager for the daily update check: waiting for your decision. The always-on `GuardService` is needed anyway (package-added receiver, settings observers), and the update check now retries hourly after a failure (B-09), so WorkManager would add a library for little gain.
+
 
 ### A-04 Tests and build
 **P3 · [ ]**
@@ -322,4 +329,6 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 | S-03 | 2026-11-25 | see git log | Secrets encrypted with Android Keystore |
 | P-01 | 2026-11-25 | see git log | System calls off the main thread; release in the background with a `releasing` guard |
 | P-02, D-02, D-03, B-07 | 2026-11-25 | see git log | `Apps.kt`, background lists and icons, no raw threads, typed text kept |
+| A-02 | 2026-11-25 | see git log | Features.kt split into 7 files |
+| D-06, A-03 (part) | 2026-11-25 | see git log | One key style + NOT_EXPORTED in Prefs; Application class; incremental usage |
 | B-09 (4 of 5), D-05, B-06 | 2026-11-25 | see git log | TOTP replay, update check timing + APK check, usage before midnight; one DoT test; app ID from BuildConfig; branding/Wi-Fi errors shown |

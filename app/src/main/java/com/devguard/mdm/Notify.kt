@@ -25,9 +25,13 @@ enum class Channel(val id: String, val title: String, val importance: Int) {
 
 /** Builds and posts notifications (D-01: replaces seven copies of channel → builder → notify). */
 object Notify {
+    /** Creates every channel. Called once at process start ([DeviceGuardApp]); creating an existing channel is a no-op. */
+    fun createChannels(c: Context) = runCatching {
+        c.getSystemService(NotificationManager::class.java)
+            .createNotificationChannels(Channel.entries.map { NotificationChannel(it.id, it.title, it.importance) })
+    }
+
     fun build(c: Context, ch: Channel, title: String, text: String, ongoing: Boolean = false): Notification {
-        val nm = c.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(ch.id, ch.title, ch.importance))
         return Notification.Builder(c, ch.id)
             .setSmallIcon(R.drawable.ic_shield)
             .setContentTitle(title)

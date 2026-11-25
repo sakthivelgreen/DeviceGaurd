@@ -31,6 +31,7 @@
     <!-- testOnly lets the device owner be removed over ADB during development:
          adb shell dpm remove-active-admin com.devguard.mdm/.AdminReceiver -->
     <application
+        android:name=".DeviceGuardApp"
         android:allowBackup="false"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"

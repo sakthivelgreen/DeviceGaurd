@@ -615,6 +615,7 @@ MDM_App/
             ├── ScreenTime.kt            Limits, schedules, temporary unlock, usage queries, engine (evaluate)
             ├── ScreenTimeActivity.kt    Screen time screen + schedule editor
             ├── Totp.kt                  Two-factor TOTP (RFC 6238) + QR bitmap helper (zxing)
+            ├── DeviceGuardApp.kt        Application: one-time setup at process start (notification channels)
             ├── Apps.kt                  Installed apps, cached names, background icon loading (one place for all screens)
             ├── AdminUi.kt               Shared dialogs: recovery code, PC reset, change PIN, TOTP prompt/setup
             ├── SettingsActivity.kt      PIN/2FA, profile export/import, provisioning QR, app updates
@@ -868,5 +869,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-25 | **P-02, D-02, D-03, B-07:** Bloatware and Background apps load their lists in the background (Bloatware opened in 1.1 s before); new `Apps.kt` for installed apps, cached names and background icons, used by every screen; no raw `Thread {}` left (all use `inBackground`); typed text in Websites → Block this site and Blocked apps → Add an app survives page redraws. |
 | 2026-11-25 | **B-09, D-05, B-06:** two-factor codes work only once; the daily update check only counts after GitHub answers (failures retry hourly); a downloaded update is checked (same app, newer version matching the tag, same signing key) before installing; screen time counts an app that was already open at midnight; one DNS-over-TLS test for Private DNS and Smart DNS; ADB commands use the build's app ID; Branding and Wi-Fi allowlist show when Android refuses a change. |
 | 2026-11-25 | **A-02:** `Features.kt` (666 lines, 7 features) split into `WebFilter.kt`, `PrivateDns.kt`, `SmartDns.kt`, `ChromePolicy.kt`, `Kiosk.kt`, `Blocklist.kt`, `Approval.kt`; code unchanged. |
+| 2026-11-25 | **D-06, A-03:** all preference keys are constants in `Prefs`, and the list of keys never exported (`Prefs.NOT_EXPORTED`) lives next to them; export also skips any encrypted value, so a future secret can't leak. New `DeviceGuardApp` creates notification channels once; screen time reads only new usage events each minute (full re-read every 10 min). |
 
 © Sakthivel J

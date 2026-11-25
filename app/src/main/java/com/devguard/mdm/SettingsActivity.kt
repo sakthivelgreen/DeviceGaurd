@@ -188,7 +188,7 @@ class SettingsActivity : BaseActivity() {
         val col = column()
         val url = EditText(this).apply {
             hint = "https://…/DeviceGuard.apk"
-            setText(Prefs.getStr(this@SettingsActivity, "provUrl") ?: "")
+            setText(Prefs.getStr(this@SettingsActivity, Prefs.PROV_URL) ?: "")
             isSingleLine = true
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
@@ -200,7 +200,7 @@ class SettingsActivity : BaseActivity() {
             .setPositiveButton("Show QR") { _, _ ->
                 val link = url.text.toString().trim()
                 if (!link.startsWith("https://")) { toast("Enter an https:// link to the APK"); return@setPositiveButton }
-                Prefs.setStr(this, "provUrl", link)
+                Prefs.setStr(this, Prefs.PROV_URL, link)
                 val json = Device.provisioningJson(this, link, ssid.text.toString().trim(), pass.text.toString())
                 val view = column().apply {
                     addView(ImageView(this@SettingsActivity).apply { setImageBitmap(Qr.bitmap(json, 900)) },

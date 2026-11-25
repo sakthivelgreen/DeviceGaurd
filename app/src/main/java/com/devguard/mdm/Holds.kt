@@ -23,7 +23,7 @@ enum class Hold(val key: String, val hide: Boolean, val label: String) {
 }
 
 object Holds {
-    private const val MIGRATED = "holdsV1"
+    const val MIGRATED = "holdsV1"
 
     fun get(c: Context, h: Hold): Set<String> = Prefs.getSet(c, h.key)
 

@@ -104,41 +104,78 @@ object ScreenTime {
         set(Calendar.HOUR_OF_DAY, 0); set(Calendar.MINUTE, 0); set(Calendar.SECOND, 0); set(Calendar.MILLISECOND, 0)
     }.timeInMillis
 
-    /** Foreground time per app since midnight (ms), from usage events. */
-    fun usageToday(c: Context): Map<String, Long> = usageBetween(c, startOfDay(), System.currentTimeMillis())
+    /** Foreground time per app since midnight (ms), from usage events. Incremental: see [today]. */
+    fun usageToday(c: Context): Map<String, Long> =
+        if (!hasUsageAccess(c)) emptyMap() else today.get(c, startOfDay(), System.currentTimeMillis())
 
     /** Foreground time per app for one past day (0 = today). */
     fun usageForDay(c: Context, daysAgo: Int): Map<String, Long> {
-        val start = startOfDay(daysAgo)
-        val end = if (daysAgo == 0) System.currentTimeMillis() else startOfDay(daysAgo - 1)
-        return usageBetween(c, start, end)
+        if (daysAgo == 0) return usageToday(c)
+        return usageBetween(c, startOfDay(daysAgo), startOfDay(daysAgo - 1))
     }
 
     private const val LOOKBACK_MS = 12 * 3600_000L
+    private const val FULL_READ_MS = 10 * 60_000L
 
     private fun usageBetween(c: Context, start: Long, end: Long): Map<String, Long> {
         if (!hasUsageAccess(c)) return emptyMap()
-        val usm = c.getSystemService(UsageStatsManager::class.java)
         // B-09: start reading 12 h early, so an app already on screen at [start] (e.g. open at midnight) is seen;
         // only the part inside [start, end] is counted.
-        val events = usm.queryEvents(start - LOOKBACK_MS, end)
-        val e = UsageEvents.Event()
         val open = HashMap<String, Long>()
         val total = HashMap<String, Long>()
-        fun add(p: String, from: Long, to: Long) {
-            val d = to - maxOf(from, start)
-            if (d > 0) total[p] = (total[p] ?: 0L) + d
-        }
+        readEvents(c, start - LOOKBACK_MS, end, start, open, total)
+        return withOpen(total, open, start, end)
+    }
+
+    /**
+     * Adds the foreground time in usage events [from, to) to [total], counting only time after [start].
+     * [open] holds apps on screen (package → since when) and carries over between calls.
+     */
+    private fun readEvents(c: Context, from: Long, to: Long, start: Long, open: MutableMap<String, Long>, total: MutableMap<String, Long>) {
+        if (to <= from) return
+        val events = c.getSystemService(UsageStatsManager::class.java).queryEvents(from, to)
+        val e = UsageEvents.Event()
         while (events.hasNextEvent()) {
             events.getNextEvent(e)
             when (e.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> open.putIfAbsent(e.packageName, e.timeStamp)
-                UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED ->
-                    open.remove(e.packageName)?.let { add(e.packageName, it, e.timeStamp) }
+                UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED -> open.remove(e.packageName)?.let {
+                    val d = e.timeStamp - maxOf(it, start)
+                    if (d > 0) total[e.packageName] = (total[e.packageName] ?: 0L) + d
+                }
             }
         }
-        open.forEach { (p, t) -> add(p, t, end) } // still on screen
-        return total
+    }
+
+    /** [total] plus the time apps still on screen have been open (after [start]) until [now]. */
+    private fun withOpen(total: Map<String, Long>, open: Map<String, Long>, start: Long, now: Long): Map<String, Long> {
+        val r = HashMap(total)
+        open.forEach { (p, t) -> val d = now - maxOf(t, start); if (d > 0) r[p] = (r[p] ?: 0L) + d }
+        return r
+    }
+
+    /**
+     * Today's usage, read incrementally (A-03): the screen-time check runs every minute, and each call now reads
+     * only the events since the previous call instead of everything since midnight (plus the 12 h look-back).
+     * Starts again on a new day, if the clock went back, and every 10 minutes (so an event Android recorded a
+     * moment late can't skew the total for the rest of the day).
+     */
+    private val today = object {
+        private var dayStart = 0L
+        private var readUntil = 0L
+        private var fullAt = 0L
+        private val total = HashMap<String, Long>()
+        private val open = HashMap<String, Long>()
+
+        @Synchronized
+        fun get(c: Context, start: Long, now: Long): Map<String, Long> {
+            if (start != dayStart || now < readUntil || now - fullAt > FULL_READ_MS) {
+                dayStart = start; readUntil = start - LOOKBACK_MS; fullAt = now; total.clear(); open.clear()
+            }
+            readEvents(c, readUntil, now, start, open, total)
+            readUntil = now
+            return withOpen(total, open, start, now)
+        }
     }
 
     // ---------- schedule time maths ----------

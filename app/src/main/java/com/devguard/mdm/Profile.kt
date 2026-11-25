@@ -10,20 +10,15 @@ import org.json.JSONObject
  * Secrets (PIN, recovery code, authenticator secret, tokens) are never exported.
  */
 object Profile {
-    private val SECRET_KEYS = setOf(
-        "pinHash", "pinSalt", "pinAlgo", "recHash", "recSalt", "recAlgo", *Session.STATE_KEYS.toTypedArray(), Prefs.TOTP_SECRET, Prefs.TOTP_LAST_STEP, Prefs.UPD_TOKEN, Prefs.NEXTDNS_KEY,
-        Prefs.GUARD_WAIT_START, Prefs.GUARD_WAIT_WHAT, Prefs.BG_LAST_RUN, Prefs.BG_LAST_COUNT, Prefs.DNS_FALLBACK, Prefs.UPD_LAST,
-        "stSites", "dnsBlockedNets", Prefs.ST_TEMP_ALLOW, "holdsV1",
-        // Holds lists: feature-owned ones are rebuilt by their feature; manual ones go in device.hidden/suspended.
-        *Hold.values().map { it.key }.toTypedArray(),
-    )
+    /** Defined in Prefs, next to the keys (D-06). */
+    private val SECRET_KEYS get() = Prefs.NOT_EXPORTED
 
     /** The profile as JSON. Slow (one system call per installed package): call it off the main thread. */
     fun export(c: Context): String {
         val m = Mdm(c)
         val prefs = JSONObject()
         Prefs.all(c).forEach { (k, v) ->
-            if (k in SECRET_KEYS) return@forEach
+            if (k in SECRET_KEYS || (v as? String)?.startsWith("enc1:") == true) return@forEach // never a secret
             prefs.put(k, if (v is Set<*>) JSONObject().put("set", JSONArray(v.toList())) else JSONObject().put(typeOf(v), v))
         }
         val apps = Apps.packages(c)

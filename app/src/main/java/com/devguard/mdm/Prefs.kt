@@ -16,9 +16,14 @@ object Prefs {
     const val PIN_MAX = 12
     private const val PBKDF2_ITERATIONS = 100_000
 
-    fun hasPin(c: Context) = p(c).contains("pinHash")
-    fun setPin(c: Context, pin: String) = storeHash(c, "pin", pin)
-    fun checkPin(c: Context, pin: String) = checkHash(c, "pin", pin)
+    private const val PIN = "pin"
+    private const val REC = "rec"
+    /** The three keys a salted hash is stored under: "<name>Hash", "<name>Salt", "<name>Algo". */
+    private fun credKeys(name: String) = listOf("${name}Hash", "${name}Salt", "${name}Algo")
+
+    fun hasPin(c: Context) = p(c).contains("${PIN}Hash")
+    fun setPin(c: Context, pin: String) = storeHash(c, PIN, pin)
+    fun checkPin(c: Context, pin: String) = checkHash(c, PIN, pin)
 
     /** Why a new PIN isn't acceptable, or null if it's fine. Used by PIN setup and Change PIN. */
     fun pinProblem(pin: String, confirm: String): String? = when {
@@ -29,23 +34,37 @@ object Prefs {
         else -> null
     }
 
-    fun hasRecovery(c: Context) = p(c).contains("recHash")
+    fun hasRecovery(c: Context) = p(c).contains("${REC}Hash")
 
     /** Creates a new random recovery code (e.g. K7QM-3PXD-W9TA-6HZN), stores only its hash, returns it to show once. */
     fun newRecoveryCode(c: Context): String {
         val alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
         val rnd = SecureRandom()
         val code = (1..16).map { alphabet[rnd.nextInt(alphabet.length)] }.joinToString("").chunked(4).joinToString("-")
-        storeHash(c, "rec", normalizeCode(code))
+        storeHash(c, REC, normalizeCode(code))
         return code
     }
 
-    fun checkRecovery(c: Context, code: String) = checkHash(c, "rec", normalizeCode(code))
+    fun checkRecovery(c: Context, code: String) = checkHash(c, REC, normalizeCode(code))
 
     private fun normalizeCode(code: String) = code.uppercase().filter { it.isLetterOrDigit() }
 
     /** Removes the PIN; the app then asks to create a new one (used by recovery code and PC reset). */
-    fun clearPin(c: Context) = p(c).edit().remove("pinHash").remove("pinSalt").remove("pinAlgo").commit()
+    fun clearPin(c: Context) = p(c).edit().apply { credKeys(PIN).forEach { remove(it) } }.commit()
+
+    /**
+     * Keys that never go into an exported profile (D-06): defined here, next to the keys, so the export list can't
+     * drift from the keys. Credentials, secrets, lockout state, and device/runtime state that would be wrong on
+     * another phone. Profile.export also skips any encrypted value ("enc1:"), as a safety net for secrets added later.
+     */
+    val NOT_EXPORTED: Set<String> by lazy {
+        credKeys(PIN).toSet() + credKeys(REC) + Secrets.KEYS + TOTP_LAST_STEP + Session.STATE_KEYS +
+            // runtime / device state
+            setOf(GUARD_WAIT_START, GUARD_WAIT_WHAT, BG_LAST_RUN, BG_LAST_COUNT, DNS_FALLBACK, UPD_LAST, K_DNS_BLOCKED_NETS,
+                ST_TEMP_ALLOW, K_KIOSK_ON, Holds.MIGRATED) +
+            // feature-owned lists, rebuilt by their feature (your own hides/pauses go in device.hidden/suspended)
+            K_ST_SITES + Hold.values().map { it.key }
+    }
 
     /** Stores a salted PBKDF2 hash of [secret] under "<name>Salt" / "<name>Hash" / "<name>Algo". */
     private fun storeHash(c: Context, name: String, secret: String) {
@@ -110,8 +129,9 @@ object Prefs {
 
     // ---- Website blocking ----
     fun domains(c: Context) = set(c, K_DOMAINS)
-    fun webBlock(c: Context) = flag(c, "webBlock")
-    fun setWebBlock(c: Context, v: Boolean) = putFlag(c, "webBlock", v)
+    const val K_WEB_BLOCK = "webBlock"
+    fun webBlock(c: Context) = flag(c, K_WEB_BLOCK)
+    fun setWebBlock(c: Context, v: Boolean) = putFlag(c, K_WEB_BLOCK, v)
     // ---- Generic string / JSON helpers ----
     fun getStr(c: Context, k: String): String? = p(c).getString(k, null)
     fun setStr(c: Context, k: String, v: String?) = p(c).edit().putString(k, v).commit()
@@ -139,8 +159,9 @@ object Prefs {
     const val ST_SCHEDULES = "stSchedules"   // JSON [schedule]
     const val ST_TEMP_ALLOW = "stTempAllow"  // JSON {pkg: untilMillis}
     fun stSuspended(c: Context) = Holds.get(c, Hold.SUSPEND_SCREEN_TIME) // changed only through Holds
-    fun stSites(c: Context) = set(c, "stSites")
-    fun setStSites(c: Context, v: Set<String>) = putSet(c, "stSites", v)
+    const val K_ST_SITES = "stSites"
+    fun stSites(c: Context) = set(c, K_ST_SITES)
+    fun setStSites(c: Context, v: Set<String>) = putSet(c, K_ST_SITES, v)
 
     // ---- Two-factor (TOTP) ----
     const val TOTP_SECRET = "totpSecret"
@@ -179,10 +200,12 @@ object Prefs {
     fun dnsBlockedNets(c: Context) = set(c, K_DNS_BLOCKED_NETS)
 
     /** Private DNS host chosen in the app (enforced/auto-reverted by GuardService), or null. */
-    fun privateDnsHost(c: Context): String? = p(c).getString("privateDnsHost", null)
-    fun setPrivateDnsHost(c: Context, v: String?) = p(c).edit().putString("privateDnsHost", v).commit()
-    fun familyDns(c: Context) = flag(c, "familyDns")
-    fun setFamilyDns(c: Context, v: Boolean) = putFlag(c, "familyDns", v)
+    const val K_PRIVATE_DNS_HOST = "privateDnsHost"
+    const val K_FAMILY_DNS = "familyDns"
+    fun privateDnsHost(c: Context): String? = p(c).getString(K_PRIVATE_DNS_HOST, null)
+    fun setPrivateDnsHost(c: Context, v: String?) = p(c).edit().putString(K_PRIVATE_DNS_HOST, v).commit()
+    fun familyDns(c: Context) = flag(c, K_FAMILY_DNS)
+    fun setFamilyDns(c: Context, v: Boolean) = putFlag(c, K_FAMILY_DNS, v)
 
     // ---- Chrome policies ----
     const val CHROME_ON = "chromeOn"
@@ -196,8 +219,9 @@ object Prefs {
     fun setFlag(c: Context, k: String, v: Boolean) = putFlag(c, k, v)
 
     // ---- Approved-apps mode ----
-    fun approvalMode(c: Context) = flag(c, "approvalMode")
-    fun setApprovalMode(c: Context, v: Boolean) = putFlag(c, "approvalMode", v)
+    const val K_APPROVAL_MODE = "approvalMode"
+    fun approvalMode(c: Context) = flag(c, K_APPROVAL_MODE)
+    fun setApprovalMode(c: Context, v: Boolean) = putFlag(c, K_APPROVAL_MODE, v)
     fun approved(c: Context) = set(c, K_APPROVED)
     fun autoSuspended(c: Context) = Holds.get(c, Hold.SUSPEND_APPROVAL) // changed only through Holds
 
@@ -205,8 +229,10 @@ object Prefs {
     fun blockedPkgs(c: Context) = set(c, K_BLOCKED_PKGS)
 
     // ---- Kiosk ----
-    fun kioskOn(c: Context) = flag(c, "kioskOn")
-    fun setKioskOn(c: Context, v: Boolean) = putFlag(c, "kioskOn", v)
+    const val K_KIOSK_ON = "kioskOn"
+    fun kioskOn(c: Context) = flag(c, K_KIOSK_ON)
+    fun setKioskOn(c: Context, v: Boolean) = putFlag(c, K_KIOSK_ON, v)
+    const val PROV_URL = "provUrl" // last APK link used for the setup QR code
     fun kioskPkgs(c: Context) = set(c, K_KIOSK_PKGS)
 }
 
