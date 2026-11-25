@@ -16,3 +16,6 @@ keys/
 
 # Tool logs
 tools/debloat-log.csv
+
+# Phone-specific snapshot (model, serial, addresses, accounts): never commit
+DEVICE_INFO.md

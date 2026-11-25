@@ -6,7 +6,6 @@
 
 DeviceGuard MDM is a single-phone Mobile Device Management app. It runs as Android **Device Owner**, which lets it control the Play Store, block or remove apps, filter websites, lock down device settings, clean up bloatware and run the phone in kiosk mode. You manage everything on the phone, behind an admin PIN; no server is needed.
 
-**Current deployment:** the phone (Android 16) · Device Owner since 2026-11-09 · see [DEVICE_INFO.md](DEVICE_INFO.md)
 **Known issues and planned fixes:** [ISSUES.md](ISSUES.md) (reference the issue ID, e.g. `B-01`, in commit messages)
 
 ---
@@ -305,7 +304,7 @@ Debug and release builds are signed with the **same key** (`keys\deviceguard.key
 
 ## 5. Connect the phone with ADB
 
-Current phone IP: **`<phone-ip>`** (it changed after the reset; check Settings → About → Status or the Wireless debugging screen).
+The phone's IP address is in Settings → About → Status, or on the Wireless debugging screen (it can change after a reset).
 
 **Wireless:**
 1. Phone: Settings → Developer options → **Wireless debugging → ON**.
@@ -328,7 +327,7 @@ Current phone IP: **`<phone-ip>`** (it changed after the reset; check Settings �
 
 ## 6. Provision Device Owner (factory reset)
 
-Android only lets an app become **Device Owner** when the phone has **no accounts**, **no extra users/profiles** (Private Space, App Clone, Guest, work profile) and **no existing owner**. In practice that means a factory reset. Back up first; the checklist is in DEVICE_INFO.md §6.
+Android only lets an app become **Device Owner** when the phone has **no accounts**, **no extra users/profiles** (Private Space, App Clone, Guest, work profile) and **no existing owner**. In practice that means a factory reset. Back up first: chats, authenticator apps (turn on sync or export the accounts), banking/UPI logins and MPINs, photos and files. Private Space is erased too.
 
 1. **Factory reset:** Settings → System → Reset → Erase all data.
 2. **Setup wizard:** Wi-Fi only. **Skip** Google sign-in, **skip** vivo account, **don't restore** anything.
@@ -565,7 +564,6 @@ Websites → **NextDNS categories** → *Connect NextDNS…* → Profile ID (nex
 ```
 MDM_App/
 ├── README.md                  ← this file
-├── DEVICE_INFO.md             ← phone snapshot: hardware, users, accounts, apps, reset impact
 ├── ISSUES.md                  ← issue tracker: bugs, security, cleanup, DRY, architecture (IDs + status)
 ├── build.gradle.kts           ← root: plugin versions (AGP, Kotlin)
 ├── settings.gradle.kts        ← repositories, module list
@@ -847,9 +845,9 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 |---|---|
 | 2026-11-09 | v1.0: first build. Device Owner MDM with PIN, apps and Play Store control, approved-apps mode, VPN DNS filter, restrictions, kiosk. |
 | 2026-11-09 | Website blocking without VPN: Private DNS family filters and Chrome enterprise policies; hide other browsers. |
-| 2026-11-09 | Modern UI: gradient status card, rounded square tiles, cards, back headers. DEVICE_INFO.md added. |
+| 2026-11-09 | Modern UI: gradient status card, rounded square tiles, cards, back headers. |
 | 2026-11-09 | Bloatware manager (Safe/Caution/Keep/Unknown, `bloat.csv`) and `tools\debloat.ps1`. |
-| 2026-11-09 | Phone factory reset; app provisioned as Device Owner (IP now <phone-ip>). |
+| 2026-11-09 | Phone factory reset; app provisioned as Device Owner. |
 | 2026-11-09 | Bloatware: 2×2 tabs (labels were clipped), per-app switches instead of "disable all". |
 | 2026-11-09 | Keep scroll position on re-render; Apps list updates only the changed row. |
 | 2026-11-09 | Blocked apps (auto-uninstall on install); Play Store Suspend explains the verifier limit and offers Hide; dashboard regrouped. |
@@ -878,5 +876,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-25 | **A-02:** `Features.kt` (666 lines, 7 features) split into `WebFilter.kt`, `PrivateDns.kt`, `SmartDns.kt`, `ChromePolicy.kt`, `Kiosk.kt`, `Blocklist.kt`, `Approval.kt`; code unchanged. |
 | 2026-11-25 | **D-06, A-03:** all preference keys are constants in `Prefs`, and the list of keys never exported (`Prefs.NOT_EXPORTED`) lives next to them; export also skips any encrypted value, so a future secret can't leak. New `DeviceGuardApp` creates notification channels once; screen time reads only new usage events each minute (full re-read every 10 min). |
 | 2026-11-25 | **A-04:** 13 unit tests for pure logic (`app\src\test`, `gradlew testDebugUnitTest`); R8 shrinking and obfuscation for release builds (`proguard-rules.pro`), and `-PminifyDebug` to try R8 on the phone. Builds use Google's mirror of Maven Central, which is blocked on the development network. |
+| 2026-11-25 | Phone-specific details removed from the project: `DEVICE_INFO.md` (model, serial, addresses, accounts, app list) deleted and git-ignored; README no longer names the phone model or its IP. |
 
 © Sakthivel J
