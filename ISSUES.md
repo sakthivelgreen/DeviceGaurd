@@ -320,12 +320,12 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 
 | ID | Date | Commit | Note |
 |---|---|---|---|
-| S-01 (part) | 2026-11-23 | `50a3593`, `b24fdd3` | Dedicated keystore in `keys/` with strong password |
+| S-01 (part) | 2026-11-23 | see git log | Dedicated keystore in `keys/` with strong password |
 | S-01 (part) | 2026-11-24 | — | Keystore + `keystore.properties` uploaded to private cloud storage |
 | B-03 | 2026-11-24 | see git log | Guard wait tied to one action |
 | S-02 | 2026-11-24 | see git log | Profile import guarded; Danger zone and NextDNS kept open by decision |
 | B-01 (code) | 2026-11-24 | see git log | IPv6 allowed in the VPN filter; phone test pending |
-| B-04 | 2026-11-24 | `0676138` | ADB PIN reset verified on the phone |
+| B-04 | 2026-11-24 | see git log | ADB PIN reset verified on the phone |
 | B-02 / A-01 | 2026-11-24 | see git log | Holds.kt: per-feature pause/hide lists; migration verified on the phone |
 | S-04, B-05, B-06, B-08, R-01, R-02, D-01, D-04 | 2026-11-24 | see git log | Group 2 |
 | S-03 | 2026-11-25 | see git log | Secrets encrypted with Android Keystore |
