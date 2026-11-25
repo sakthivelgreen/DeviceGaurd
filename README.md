@@ -6,7 +6,7 @@
 
 DeviceGuard MDM is a single-phone Mobile Device Management app. It runs as Android **Device Owner**, which lets it control the Play Store, block or remove apps, filter websites, lock down device settings, clean up bloatware and run the phone in kiosk mode. You manage everything on the phone, behind an admin PIN; no server is needed.
 
-**Known issues and planned fixes:** [ISSUES.md](ISSUES.md) (reference the issue ID, e.g. `B-01`, in commit messages)
+**Known issues and planned fixes:** kept locally in `ISSUES.md` (not in git; reference the issue ID, e.g. `B-01`, in commit messages)
 
 ---
 
@@ -562,7 +562,7 @@ Websites → **NextDNS categories** → *Connect NextDNS…* → Profile ID (nex
 ```
 MDM_App/
 ├── README.md                  ← this file
-├── ISSUES.md                  ← issue tracker: bugs, security, cleanup, DRY, architecture (IDs + status)
+├── ISSUES.md                  ← local issue tracker (git-ignored): bugs, security, cleanup, DRY, architecture
 ├── build.gradle.kts           ← root: plugin versions (AGP, Kotlin)
 ├── settings.gradle.kts        ← repositories, module list
 ├── gradle.properties          ← JVM args, AndroidX flags
@@ -874,5 +874,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-25 | **A-04:** 13 unit tests for pure logic (`app\src\test`, `gradlew testDebugUnitTest`); R8 shrinking and obfuscation for release builds (`proguard-rules.pro`), and `-PminifyDebug` to try R8 on the phone. Builds use Google's mirror of Maven Central, which is blocked on the development network. |
 | 2026-11-25 | Phone-specific details removed from the project: `DEVICE_INFO.md` (model, serial, addresses, accounts, app list) deleted and git-ignored; README no longer names the phone model or its IP. |
 | 2026-11-25 | **R-03: VPN filter removed** (it made many apps fail to open). Your site list is blocked in every app through NextDNS (Send my blocked sites to NextDNS) and in Chrome through the Chrome rules. On update, DeviceGuard clears itself as always-on VPN if an older version set it, and deletes the old VPN settings. About 250 lines and the VPN consent flow are gone. |
+| 2026-11-25 | `ISSUES.md` removed from git and git-ignored; it stays on the development PC as the local issue tracker. |
 
 © Sakthivel J

@@ -19,3 +19,6 @@ tools/debloat-log.csv
 
 # Phone-specific snapshot (model, serial, addresses, accounts): never commit
 DEVICE_INFO.md
+
+# Local issue tracker: kept on the PC, not published
+ISSUES.md
