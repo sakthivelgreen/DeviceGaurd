@@ -596,7 +596,13 @@ MDM_App/
             ├── KioskActivity.kt         Kiosk home screen (lock task)
             ├── AboutActivity.kt         App info and author
             ├── Mdm.kt                   AdminReceiver, RESTRICTION_GROUPS, Mdm (DevicePolicyManager wrapper), releaseAll()
-            ├── Features.kt              WebFilter, PrivateDns, SmartDns, ChromePolicy, Kiosk, Blocklist, Approval
+            ├── WebFilter.kt             VPN website filter switch, presets, onDomainsChanged()
+            ├── PrivateDns.kt            Private DNS filter: providers, apply(), direct write, lock
+            ├── SmartDns.kt              Falls back to Automatic on networks that block port 853; DoT test
+            ├── ChromePolicy.kt          Chrome enterprise policies, Allow only Chrome
+            ├── Kiosk.kt                 Lock task kiosk start/stop
+            ├── Blocklist.kt             Always-blocked apps
+            ├── Approval.kt              Approved-apps-only mode
             ├── Bloat.kt                 BloatCat, bloat.csv loader, app state, ADB command builders
             ├── Services.kt              DnsVpnService (DNS filter), GuardService (install watcher), BootReceiver
             ├── Prefs.kt                 SharedPreferences store, PIN + recovery-code hashing, Session (timeout/lockout)
@@ -630,7 +636,7 @@ MDM_App/
         │             │                │                  │                │               │
         └─────────────┴────────┬───────┴──────────────────┴────────────────┴───────────────┘
                                ▼
-     Features.kt (WebFilter · PrivateDns · ChromePolicy · Kiosk · Blocklist · Approval) · Bloat.kt
+     WebFilter · PrivateDns · SmartDns · ChromePolicy · Kiosk · Blocklist · Approval (one file each) · Bloat.kt
                                ▼
                Mdm.kt  →  android.app.admin.DevicePolicyManager (as Device Owner)
                                │
@@ -652,14 +658,14 @@ MDM_App/
 | Any DPM call | `Mdm.kt` → `class Mdm` (`setHidden`, `setSuspended`, `setRestriction`, `isOwner`…) |
 | Restriction switches | `Mdm.kt` → `RESTRICTION_GROUPS` |
 | Undo everything | `Mdm.kt` → `releaseAll()` |
-| Auto-switch on blocking networks | `Features.kt` → `SmartDns` (`check`, `enterFallback` = Private DNS → Automatic, `exitFallback`, `cleanup`, `bootstrap`); network watcher in `GuardService` (`registerDefaultNetworkCallback`). The DoH/split-DNS code in `DnsVpnService` is no longer used by it. |
+| Auto-switch on blocking networks | `SmartDns.kt` → `SmartDns` (`check`, `enterFallback` = Private DNS → Automatic, `exitFallback`, `cleanup`, `bootstrap`); network watcher in `GuardService` (`registerDefaultNetworkCallback`). The DoH/split-DNS code in `DnsVpnService` is no longer used by it. |
 | PIN recovery | `Prefs.kt` → `newRecoveryCode/checkRecovery/clearPin`, `Session.tryRecovery`; `MainActivity` → `forgotPin`, `showRecoveryCode`, `securityMenu`; `PinResetReceiver.kt` (ADB reset) |
-| Private DNS filter | `Features.kt` → `PrivateDns` (`PROVIDERS`, `apply()`; this does a network check, so run it off the main thread) |
-| Chrome policies | `Features.kt` → `ChromePolicy.apply()` (Bundle keys = Chrome enterprise policy names) |
+| Private DNS filter | `PrivateDns.kt` → `PrivateDns` (`PROVIDERS`, `apply()`; this does a network check, so run it off the main thread) |
+| Chrome policies | `ChromePolicy.kt` → `ChromePolicy.apply()` (Bundle keys = Chrome enterprise policy names) |
 | VPN DNS filter | `Services.kt` → `DnsVpnService` (parses IPv4/UDP DNS, NXDOMAIN for blocked names, forwards the rest to 1.1.1.1/8.8.8.8 or 1.1.1.3) |
-| Blocked apps | `Features.kt` → `Blocklist` (`PRESETS`, `parse()`, `add()`, `onInstalled()`, `sweep()`) |
-| Approved-apps mode | `Features.kt` → `Approval` |
-| Kiosk | `Features.kt` → `Kiosk.start/stop`; manifest alias `.KioskHome` |
+| Blocked apps | `Blocklist.kt` → `Blocklist` (`PRESETS`, `parse()`, `add()`, `onInstalled()`, `sweep()`) |
+| Approved-apps mode | `Approval.kt` → `Approval` |
+| Kiosk | `Kiosk.kt` → `Kiosk.start/stop`; manifest alias `.KioskHome` |
 | Bloat list and logic | `assets/bloat.csv`, `Bloat.kt` |
 | PIN and session | `Prefs.kt` → `Prefs.setPin/checkPin`, `Session` |
 | Page and widget builders | `Ui.kt` |
@@ -705,14 +711,14 @@ It appears automatically on the Restrictions screen, in the dashboard count, and
 Edit `app/src/main/assets/bloat.csv` (`package,category,name,note`, where category is `SAFE`, `CAUTION` or `KEEP`). The note may contain commas; the first three fields may not. Both the app and `tools\debloat.ps1` use it. To list the phone's built-in packages: `adb shell pm list packages -s`.
 
 ### 10.3 Add a quick-add app to Blocked apps
-`Features.kt → Blocklist.PRESETS`: `"com.example.app" to "Name",`
+`Blocklist.kt → Blocklist.PRESETS`: `"com.example.app" to "Name",`
 
 ### 10.4 Add a website preset or Private DNS provider
-- Site presets: `Features.kt → WebFilter.PRESET_SOCIAL / PRESET_VIDEO / PRESET_GAMES`. For a new preset, also add a tile in `WebActivity` (Quick add).
-- DNS providers: `Features.kt → PrivateDns.PROVIDERS` (the host must support DNS-over-TLS on port 853).
+- Site presets: `WebFilter.kt → WebFilter.PRESET_SOCIAL / PRESET_VIDEO / PRESET_GAMES`. For a new preset, also add a tile in `WebActivity` (Quick add).
+- DNS providers: `PrivateDns.kt → PrivateDns.PROVIDERS` (the host must support DNS-over-TLS on port 853).
 
 ### 10.5 Add a Chrome policy
-`Features.kt → ChromePolicy.apply()`: add a `Bundle` entry named exactly like the Chrome enterprise policy (see chromeenterprise.google/policies). Add a switch in `WebActivity` with `chromeSwitch(...)` and a key constant in `Prefs`.
+`ChromePolicy.kt → ChromePolicy.apply()`: add a `Bundle` entry named exactly like the Chrome enterprise policy (see chromeenterprise.google/policies). Add a switch in `WebActivity` with `chromeSwitch(...)` and a key constant in `Prefs`.
 
 ### 10.6 Add a new screen
 1. Create `XyzActivity : BaseActivity()` with `onResume { if (!isFinishing) render() }` and `render() = scrollPage("Title", back = true) { card("…") { … } }`.
@@ -861,5 +867,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-25 | **P-01:** system calls moved off the main thread. Dashboard ~70 → ~4 calls per open (baseline writes in the background); Restrictions page reads all restrictions once (~100 → ~3 per redraw); Apps rows make no system calls while scrolling (status read in the background); export and Danger zone → Release run in the background, Release behind a dialog that can't be dismissed, with a `releasing` guard so nothing re-hides apps meanwhile. New `inBackground` helper in `Ui.kt`. |
 | 2026-11-25 | **P-02, D-02, D-03, B-07:** Bloatware and Background apps load their lists in the background (Bloatware opened in 1.1 s before); new `Apps.kt` for installed apps, cached names and background icons, used by every screen; no raw `Thread {}` left (all use `inBackground`); typed text in Websites → Block this site and Blocked apps → Add an app survives page redraws. |
 | 2026-11-25 | **B-09, D-05, B-06:** two-factor codes work only once; the daily update check only counts after GitHub answers (failures retry hourly); a downloaded update is checked (same app, newer version matching the tag, same signing key) before installing; screen time counts an app that was already open at midnight; one DNS-over-TLS test for Private DNS and Smart DNS; ADB commands use the build's app ID; Branding and Wi-Fi allowlist show when Android refuses a change. |
+| 2026-11-25 | **A-02:** `Features.kt` (666 lines, 7 features) split into `WebFilter.kt`, `PrivateDns.kt`, `SmartDns.kt`, `ChromePolicy.kt`, `Kiosk.kt`, `Blocklist.kt`, `Approval.kt`; code unchanged. |
 
 © Sakthivel J

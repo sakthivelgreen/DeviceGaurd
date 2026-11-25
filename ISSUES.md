@@ -39,7 +39,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [D-05](#d-05-other-duplication) | P3 | [x] | DRY: DoT test, uninstall, ADB strings, guard helper, `Mdm(c)` |
 | [D-06](#d-06-two-preference-styles) | P3 | [ ] | DRY: two preference styles; export key lists can drift |
 | [A-01](#a-01-one-reconciler-for-app-state) | P2 | [x] | Architecture: one reconciler for suspended/hidden apps |
-| [A-02](#a-02-split-featureskt) | P3 | [ ] | Architecture: split Features.kt (734 lines, 8 features) |
+| [A-02](#a-02-split-featureskt) | P3 | [x] | Architecture: split Features.kt (734 lines, 8 features) |
 | [A-03](#a-03-application-class-and-workmanager) | P3 | [ ] | Architecture: Application class + WorkManager for periodic jobs |
 | [A-04](#a-04-tests-and-build) | P3 | [ ] | Unit tests for pure logic; enable R8 for release |
 | [A-05](#a-05-strings-and-ui) | P3 | [ ] | UI: strings.xml, partial re-render instead of full page rebuild |
@@ -284,9 +284,9 @@ Typed functions (`Prefs.domains`) and raw key constants (`Prefs.getFlag(c, Prefs
 Each feature declares which apps it wants suspended or hidden (manual, approval, screen time, blocklist, Chrome-only). One engine combines the sets and applies only the difference. It removes the scattered `setSuspended` / `setHidden` calls and the ownership bugs.
 
 ### A-02 Split Features.kt
-**P3 · [ ]** · `Features.kt` (734 lines)
+**P3 · [x] done 2026-11-25** · `Features.kt` (734 lines)
 
-One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Kiosk`, `Blocklist`, `Approval`.
+One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Kiosk`, `Blocklist`, `Approval`. Done: one `.kt` file each (`onDomainsChanged` is in `WebFilter.kt`); `Features.kt` removed. Paths in older items still say `Features.kt`.
 
 ### A-03 Application class and WorkManager
 **P3 · [ ]**
