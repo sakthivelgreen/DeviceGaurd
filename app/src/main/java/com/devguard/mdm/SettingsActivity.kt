@@ -92,7 +92,7 @@ class SettingsActivity : BaseActivity() {
                     }
                 }
                 button("Reset to defaults (Sakthivel J)", outlined = true) {
-                    Branding.resetDefaults(this@SettingsActivity); toast("Defaults applied"); render()
+                    toast(Branding.result(Branding.resetDefaults(this@SettingsActivity), "Defaults applied")); render()
                 }.isEnabled = owner
                 text("Lock screen changes show after the screen turns off and on. vivo may shorten long messages.", 12f).alpha = 0.6f
             }
@@ -141,9 +141,9 @@ class SettingsActivity : BaseActivity() {
         val col = column().apply { addView(input) }
         MaterialAlertDialogBuilder(this).setTitle(f.title).setView(col)
             .setPositiveButton("Save") { _, _ ->
-                Branding.set(this, f.key, input.text.toString()); toast("Saved"); render()
+                toast(Branding.result(Branding.set(this, f.key, input.text.toString()))); render()
             }
-            .setNeutralButton("Default") { _, _ -> Prefs.setStr(this, f.key, null); Branding.apply(this); render() }
+            .setNeutralButton("Default") { _, _ -> toast(Branding.result(Branding.set(this, f.key, null), "Default restored")); render() }
             .setNegativeButton("Cancel", null).show()
     }
 

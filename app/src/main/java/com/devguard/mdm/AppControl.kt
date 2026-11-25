@@ -22,7 +22,7 @@ object AppControl {
     /** Packages being force-stopped right now (their unhide "package added" broadcast must be ignored). */
     private val ignoring = ConcurrentHashMap<String, Long>()
 
-    const val ADB_GRANT_OPS = "adb shell pm grant com.devguard.mdm android.permission.GET_APP_OPS_STATS"
+    const val ADB_GRANT_OPS = "adb shell pm grant ${BuildConfig.APPLICATION_ID} android.permission.GET_APP_OPS_STATS"
 
     fun isIgnored(pkg: String): Boolean {
         val until = ignoring[pkg] ?: return false

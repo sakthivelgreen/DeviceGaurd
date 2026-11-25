@@ -23,6 +23,6 @@ class PinResetReceiver : BroadcastReceiver() {
 
     companion object {
         const val ACTION = "com.devguard.mdm.RESET_PIN"
-        const val ADB_COMMAND = "adb shell am broadcast -a $ACTION -n com.devguard.mdm/.PinResetReceiver"
+        const val ADB_COMMAND = "adb shell am broadcast -a $ACTION -n ${BuildConfig.APPLICATION_ID}/.PinResetReceiver"
     }
 }

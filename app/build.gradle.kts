@@ -22,6 +22,7 @@ val keystoreProps = Properties().apply {
 
 android {
     namespace = "com.devguard.mdm"
+    buildFeatures { buildConfig = true } // BuildConfig.APPLICATION_ID in ADB command texts (D-05)
     compileSdk = 36
     buildToolsVersion = "36.0.0"
 

@@ -161,7 +161,7 @@ object Device {
 
     fun provisioningJson(c: Context, apkUrl: String, wifiSsid: String?, wifiPass: String?): String {
         val o = org.json.JSONObject()
-            .put("android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME", "com.devguard.mdm/.AdminReceiver")
+            .put("android.app.extra.PROVISIONING_DEVICE_ADMIN_COMPONENT_NAME", android.content.ComponentName(c, AdminReceiver::class.java).flattenToShortString())
             .put("android.app.extra.PROVISIONING_DEVICE_ADMIN_PACKAGE_DOWNLOAD_LOCATION", apkUrl)
             .put("android.app.extra.PROVISIONING_DEVICE_ADMIN_SIGNATURE_CHECKSUM", signatureChecksum(c))
             .put("android.app.extra.PROVISIONING_LEAVE_ALL_SYSTEM_APPS_ENABLED", true)

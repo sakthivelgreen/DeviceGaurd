@@ -36,7 +36,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [D-02](#d-02-installed-apps-and-labels) | P2 | [x] | DRY: installed-app list + label lookups (10 files) |
 | [D-03](#d-03-background-threads) | P2 | [x] | DRY: `Thread { runOnUiThread { } }` (28 copies) |
 | [D-04](#d-04-unlock-and-credential-logic) | P2 | [x] | DRY: PIN/2FA unlock, credential reset, PIN rules, hashing, lockout |
-| [D-05](#d-05-other-duplication) | P3 | [ ] | DRY: DoT test, uninstall, ADB strings, guard helper, `Mdm(c)` |
+| [D-05](#d-05-other-duplication) | P3 | [x] | DRY: DoT test, uninstall, ADB strings, guard helper, `Mdm(c)` |
 | [D-06](#d-06-two-preference-styles) | P3 | [ ] | DRY: two preference styles; export key lists can drift |
 | [A-01](#a-01-one-reconciler-for-app-state) | P2 | [x] | Architecture: one reconciler for suspended/hidden apps |
 | [A-02](#a-02-split-featureskt) | P3 | [ ] | Architecture: split Features.kt (734 lines, 8 features) |
@@ -181,7 +181,7 @@ Daily limits, extra time and day boundaries use wall-clock time; moving the date
 - Many policy calls ignore their result, and the UI reports success anyway.
 
 - [x] `InstallResultReceiver` (Notify.kt) gets the PackageInstaller status for uninstalls (Apps, Blocked apps) and app updates; failures post a notification. Mutable, explicit PendingIntent.
-- [ ] Policy calls whose result is still ignored (many `runCatching`): review screen by screen.
+- [x] Policy calls whose result is still ignored (many `runCatching`): review screen by screen. Done 2026-11-25: Branding now reports which texts Android refused; every Wi-Fi allowlist change shows its error. The rest are best-effort by design (self-protection on each dashboard open, auto-time re-applied on each change) or already report.
 
 ### B-07 Typed text lost on page refresh
 **P2 · [x] fixed 2026-11-25** · `Ui.kt` (`scrollPage`), all `BaseActivity` screens
@@ -197,11 +197,11 @@ Read-modify-write on sets (`setAutoSuspended(autoSuspended + pkg)`) can lose an 
 
 ### B-09 Smaller bugs
 **P3 · [ ]**
-- [ ] `ScreenTime.usageBetween`: an app already open at midnight isn't counted until it's reopened.
-- [ ] VPN filter sends DNS unencrypted (UDP 53) to Cloudflare.
-- [ ] `Updater.autoCheck` saves the "last check" time before the check succeeds, so a failure waits 24 h.
-- [ ] `Updater.install` doesn't check the downloaded APK's package/version before installing.
-- [ ] TOTP codes can be reused within their 90 s window (no replay check).
+- [x] `ScreenTime.usageBetween`: an app already open at midnight isn't counted until it's reopened. Fixed 2026-11-25: events are read from 12 h earlier and only the part after midnight counts.
+- [ ] VPN filter sends DNS unencrypted (UDP 53) to Cloudflare. Waits on the [R-03](#r-03-decide-on-the-vpn-filter) decision (fix or remove the VPN filter).
+- [x] `Updater.autoCheck` saves the "last check" time before the check succeeds, so a failure waits 24 h. Fixed 2026-11-25: the day counts only after GitHub answers; failures retry at most hourly.
+- [x] `Updater.install` doesn't check the downloaded APK's package/version before installing. Fixed 2026-11-25: package name, newer version, version = tag, same signing certificate (SHA-256).
+- [x] TOTP codes can be reused within their 90 s window (no replay check). Fixed 2026-11-25: the last accepted step is stored (`totpLastStep`, not exported); a code from the same or an earlier step is refused.
 
 ---
 
@@ -214,11 +214,11 @@ Unused since the VPN backup was removed on 2026-11-23: `office`, `isOffice`, `fo
 
 ### R-02 Other unused code
 **P3 · [x] done 2026-11-24**
-- [ ] `PrivateDns.adbCommand` (`Features.kt`), `ScreenTime.activeSites`
-- [ ] `RestrictionsActivity.guardOff`: now just calls its argument
-- [ ] `MainActivity.showRecoveryCode`, `MainActivity.pcResetHelp`: one-line wrappers
-- [ ] Duplicate KDoc on `WebFilter.enable` (`Features.kt:23-28`)
-- [ ] `UNINSTALL_RESULT` / `UPDATE_RESULT` broadcasts: add a receiver ([B-06](#b-06-failures-are-hidden)) or delete them
+- [x] `PrivateDns.adbCommand` (`Features.kt`), `ScreenTime.activeSites`
+- [x] `RestrictionsActivity.guardOff`: now just calls its argument
+- [x] `MainActivity.showRecoveryCode`, `MainActivity.pcResetHelp`: one-line wrappers
+- [x] Duplicate KDoc on `WebFilter.enable` (`Features.kt:23-28`)
+- [x] `UNINSTALL_RESULT` / `UPDATE_RESULT` broadcasts: add a receiver ([B-06](#b-06-failures-are-hidden)) or delete them
 
 ### R-03 Decide on the VPN filter
 **P2 · [ ]** · `Services.kt` (`DnsVpnService`), `Features.kt` (`WebFilter`), `WebActivity.kt`
@@ -255,19 +255,19 @@ Done: no `Thread { }` or `runOnUiThread` left in any screen. `GuardService`'s st
 
 ### D-04 Unlock and credential logic
 **P2 · [x] done 2026-11-24**
-- [ ] PIN → TOTP → unlock flow: `MainActivity.kt:67-73` and `Ui.kt:438-450` → one `unlockFlow(onOk)`
-- [ ] `clearPin` + `Totp.disable`: `MainActivity.recoverWithCode` and `PinResetReceiver` → `Prefs.resetCredentials()`
-- [ ] PIN rules (4–12 digits, both entries match): `MainActivity.kt:59-60` and `AdminUi.kt:49-50` → one validator
-- [ ] Salted-hash store/check written twice (PIN, recovery code) → `storeHash(key)` / `checkHash(key)`
-- [ ] Lockout logic in `Session.tryUnlock` and `tryRecovery` → one `attempt { }`
+- [x] PIN → TOTP → unlock flow: `MainActivity.kt:67-73` and `Ui.kt:438-450` → one `unlockFlow(onOk)`
+- [x] `clearPin` + `Totp.disable`: `MainActivity.recoverWithCode` and `PinResetReceiver` → `Prefs.resetCredentials()`
+- [x] PIN rules (4–12 digits, both entries match): `MainActivity.kt:59-60` and `AdminUi.kt:49-50` → one validator
+- [x] Salted-hash store/check written twice (PIN, recovery code) → `storeHash(key)` / `checkHash(key)`
+- [x] Lockout logic in `Session.tryUnlock` and `tryRecovery` → one `attempt { }`
 
 ### D-05 Other duplication
-**P3 · [ ]**
-- [ ] Port-853 TLS test: `PrivateDns.reachable` and `SmartDns.dotReachable` → one function taking a `Network`
-- [ ] Silent uninstall: `AppsActivity.uninstall` and `Blocklist.remove` → `AppControl.uninstall`
-- [ ] `com.devguard.mdm` hardcoded in 6 ADB command strings → build from `BuildConfig.APPLICATION_ID`
-- [ ] `guardOff` helper in `WebActivity` and `RestrictionsActivity`
-- [ ] `Mdm(c)` created in 51 places, `isOwner` re-queried each time; `hasRestriction` reads the whole restrictions bundle per key → read once per screen (done for dashboard, Restrictions, export in P-01 via `Mdm.restrictions()`)
+**P3 · [x] done 2026-11-25**
+- [x] Port-853 TLS test: `PrivateDns.reachable` and `SmartDns.dotReachable` → one function taking a `Network` (`SmartDns.dotReachable(host, network?, timeout)`)
+- [x] Silent uninstall: `AppsActivity.uninstall` and `Blocklist.remove` → `AppControl.uninstall`
+- [x] `com.devguard.mdm` hardcoded in 6 ADB command strings → build from `BuildConfig.APPLICATION_ID` (provisioning uses `ComponentName.flattenToShortString()`)
+- [x] `guardOff` helper in `WebActivity` and `RestrictionsActivity` (Restrictions no longer has one; Websites' is the only copy)
+- [x] `Mdm(c)` created in 51 places, `isOwner` re-queried each time; `hasRestriction` reads the whole restrictions bundle per key → read once per screen (done in P-01 via `Mdm.restrictions()`; every screen now reads `isOwner` once per render. `Mdm(c)` itself is cheap: it only looks up a system service)
 
 ### D-06 Two preference styles
 **P3 · [ ]** · `Prefs.kt`, `Profile.kt:14-18`
@@ -322,3 +322,4 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 | S-03 | 2026-11-25 | see git log | Secrets encrypted with Android Keystore |
 | P-01 | 2026-11-25 | see git log | System calls off the main thread; release in the background with a `releasing` guard |
 | P-02, D-02, D-03, B-07 | 2026-11-25 | see git log | `Apps.kt`, background lists and icons, no raw threads, typed text kept |
+| B-09 (4 of 5), D-05, B-06 | 2026-11-25 | see git log | TOTP replay, update check timing + APK check, usage before midnight; one DoT test; app ID from BuildConfig; branding/Wi-Fi errors shown |

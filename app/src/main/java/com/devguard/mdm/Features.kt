@@ -91,7 +91,7 @@ object PrivateDns {
             "Other options: VPN filter + Family-safe upstream (main profile only), or Chrome rules (Chrome only)."
 
     /** One-time ADB grant that lets the app write and lock Private DNS itself. */
-    const val ADB_GRANT = "adb shell pm grant com.devguard.mdm android.permission.WRITE_SECURE_SETTINGS"
+    const val ADB_GRANT = "adb shell pm grant ${BuildConfig.APPLICATION_ID} android.permission.WRITE_SECURE_SETTINGS"
 
     /** Prefs key: the last built-in filter host used (offered first when leaving NextDNS). */
     const val LAST_FAMILY = "lastFamilyDns"
@@ -135,27 +135,6 @@ object PrivateDns {
      * (with the hostname for TLS), because the current filter may block looking up another DNS service's name
      * (e.g. NextDNS "Block bypass methods" answers 127.0.0.1 for family.cloudflare-dns.com).
      */
-    private fun reachable(host: String): Boolean {
-        val ips = SmartDns.bootstrap(host).mapNotNull { runCatching { java.net.InetAddress.getByName(it) }.getOrNull() }
-        val targets: List<java.net.InetSocketAddress> =
-            if (ips.isNotEmpty()) ips.map { java.net.InetSocketAddress(it, 853) }
-            else listOf(java.net.InetSocketAddress(host, 853))
-        val factory = javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory
-        for (t in targets) {
-            val ok = runCatching {
-                java.net.Socket().use { raw ->
-                    raw.connect(t, 4000)
-                    (factory.createSocket(raw, host, 853, true) as javax.net.ssl.SSLSocket).use { s ->
-                        s.soTimeout = 4000
-                        s.startHandshake()
-                    }
-                }
-                true
-            }.getOrDefault(false)
-            if (ok) return true
-        }
-        return false
-    }
 
     /**
      * Lock enforcement: if the chosen filter host was changed (e.g. in vivo Settings, which ignores the
@@ -239,12 +218,12 @@ object PrivateDns {
             DevicePolicyManager.PRIVATE_DNS_SET_ERROR_HOST_NOT_SERVING -> {
                 // Android's check looks the name up through the CURRENT filter, which may block it
                 // (NextDNS "Block bypass methods"). Re-test by IP and write directly if it really works.
-                if (!(canWrite(c) && reachable(host) && write(c, host)))
+                if (!(canWrite(c) && SmartDns.dotReachable(host) && write(c, host)))
                     return "$host didn't respond as a DNS-over-TLS server. Check the name and the internet connection."
             }
             null -> {
                 if (!canWrite(c)) return UNAFFILIATED_HELP
-                if (!reachable(host)) return "$host didn't respond as a DNS-over-TLS server. Check the name and the internet connection."
+                if (!SmartDns.dotReachable(host)) return "$host didn't respond as a DNS-over-TLS server. Check the name and the internet connection."
                 if (!write(c, host)) return "Couldn't write the Private DNS setting"
             }
             else -> return "Couldn't set Private DNS"
@@ -309,18 +288,24 @@ object SmartDns {
     }
 
     /** True if a TLS connection to [host]:853 works on network [n]. */
-    private fun dotReachable(host: String, n: android.net.Network): Boolean {
+    /**
+     * True if [host] completes a TLS handshake on port 853 (DNS-over-TLS). Uses the bootstrap IPs first, so it
+     * works while DNS itself is broken or filtered (e.g. NextDNS blocking other DNS names); [n] picks the
+     * network (null = the default one). One test for Private DNS and Smart DNS (D-05).
+     */
+    fun dotReachable(host: String, n: android.net.Network? = null, timeoutMs: Int = 4000): Boolean {
         val ips = bootstrap(host).mapNotNull { runCatching { java.net.InetAddress.getByName(it) }.getOrNull() }
-            .ifEmpty { runCatching { n.getAllByName(host).toList() }.getOrDefault(emptyList()) }
+            .ifEmpty { runCatching { (n?.getAllByName(host) ?: java.net.InetAddress.getAllByName(host)).toList() }.getOrDefault(emptyList()) }
+        val tls = javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory
         for (ip in ips.take(2)) {
             val ok = runCatching {
-                val raw = n.socketFactory.createSocket()
-                raw.connect(java.net.InetSocketAddress(ip, 853), 3000)
-                val ssl = (javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory)
-                    .createSocket(raw, host, 853, true) as javax.net.ssl.SSLSocket
-                ssl.soTimeout = 3000
-                ssl.startHandshake()
-                ssl.close()
+                (n?.socketFactory?.createSocket() ?: java.net.Socket()).use { raw ->
+                    raw.connect(java.net.InetSocketAddress(ip, 853), timeoutMs)
+                    (tls.createSocket(raw, host, 853, true) as javax.net.ssl.SSLSocket).use { s ->
+                        s.soTimeout = timeoutMs
+                        s.startHandshake()
+                    }
+                }
                 true
             }.getOrDefault(false)
             if (ok) return true
@@ -350,7 +335,7 @@ object SmartDns {
         if (!force && key in Prefs.dnsBlockedNets(c) && !fallbackActive(c)) enterFallback(c)
 
         // One retry after 2 s, so a single dropped handshake doesn't switch the filter off.
-        if (dotReachable(host, n) || (!fallbackActive(c) && run { Thread.sleep(2000); dotReachable(host, n) })) {
+        if (dotReachable(host, n, timeoutMs = 3000) || (!fallbackActive(c) && run { Thread.sleep(2000); dotReachable(host, n, timeoutMs = 3000) })) {
             Prefs.updateSet(c, Prefs.K_DNS_BLOCKED_NETS) { it - key }
             if (fallbackActive(c)) exitFallback(c)
         } else {

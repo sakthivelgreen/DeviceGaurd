@@ -56,14 +56,14 @@ class RestrictionsActivity : BaseActivity() {
                         confirm("Remove $s?", "The phone won't be able to join it while the allowlist is on.", "Remove") {
                             Prefs.updateSet(this@RestrictionsActivity, Prefs.K_WIFI_ALLOW) { it - s }
                             if (Prefs.wifiAllow(this@RestrictionsActivity).isEmpty()) Prefs.setFlag(this@RestrictionsActivity, Prefs.WIFI_ALLOW_ON, false)
-                            Device.applyWifiAllow(this@RestrictionsActivity); render()
+                            Device.applyWifiAllow(this@RestrictionsActivity)?.let { toast(it) }; render()
                         }
                     }
                 }
                 val cur = Device.currentSsid(context)
                 if (cur != null && cur !in list) button("Add current network ($cur)", outlined = true) {
                     Prefs.updateSet(this@RestrictionsActivity, Prefs.K_WIFI_ALLOW) { it + cur }
-                    Device.applyWifiAllow(this@RestrictionsActivity); render()
+                    Device.applyWifiAllow(this@RestrictionsActivity)?.let { toast(it) }; render()
                 }.isEnabled = owner
                 if (cur == null) text("Turn on Location to see the current Wi-Fi name.", 12f).alpha = 0.6f
                 button("Add network by name…", outlined = true) {
@@ -74,7 +74,7 @@ class RestrictionsActivity : BaseActivity() {
                             val n = e.text.toString().trim()
                             if (n.isNotEmpty()) {
                                 Prefs.updateSet(this@RestrictionsActivity, Prefs.K_WIFI_ALLOW) { it + n }
-                                Device.applyWifiAllow(this@RestrictionsActivity); render()
+                                Device.applyWifiAllow(this@RestrictionsActivity)?.let { toast(it) }; render()
                             }
                         }.setNegativeButton("Cancel", null).show()
                 }.isEnabled = owner

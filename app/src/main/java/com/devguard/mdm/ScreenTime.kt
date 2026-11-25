@@ -97,7 +97,7 @@ object ScreenTime {
             AppOpsManager.MODE_ALLOWED
     }.getOrDefault(false)
 
-    const val ADB_USAGE = "adb shell appops set com.devguard.mdm GET_USAGE_STATS allow"
+    const val ADB_USAGE = "adb shell appops set ${BuildConfig.APPLICATION_ID} GET_USAGE_STATS allow"
 
     private fun startOfDay(daysAgo: Int = 0): Long = Calendar.getInstance().apply {
         add(Calendar.DAY_OF_YEAR, -daysAgo)
@@ -114,22 +114,30 @@ object ScreenTime {
         return usageBetween(c, start, end)
     }
 
+    private const val LOOKBACK_MS = 12 * 3600_000L
+
     private fun usageBetween(c: Context, start: Long, end: Long): Map<String, Long> {
         if (!hasUsageAccess(c)) return emptyMap()
         val usm = c.getSystemService(UsageStatsManager::class.java)
-        val events = usm.queryEvents(start, end)
+        // B-09: start reading 12 h early, so an app already on screen at [start] (e.g. open at midnight) is seen;
+        // only the part inside [start, end] is counted.
+        val events = usm.queryEvents(start - LOOKBACK_MS, end)
         val e = UsageEvents.Event()
         val open = HashMap<String, Long>()
         val total = HashMap<String, Long>()
+        fun add(p: String, from: Long, to: Long) {
+            val d = to - maxOf(from, start)
+            if (d > 0) total[p] = (total[p] ?: 0L) + d
+        }
         while (events.hasNextEvent()) {
             events.getNextEvent(e)
             when (e.eventType) {
                 UsageEvents.Event.ACTIVITY_RESUMED -> open.putIfAbsent(e.packageName, e.timeStamp)
                 UsageEvents.Event.ACTIVITY_PAUSED, UsageEvents.Event.ACTIVITY_STOPPED ->
-                    open.remove(e.packageName)?.let { total[e.packageName] = (total[e.packageName] ?: 0L) + (e.timeStamp - it) }
+                    open.remove(e.packageName)?.let { add(e.packageName, it, e.timeStamp) }
             }
         }
-        open.forEach { (p, t) -> total[p] = (total[p] ?: 0L) + (end - t) } // still on screen
+        open.forEach { (p, t) -> add(p, t, end) } // still on screen
         return total
     }
 

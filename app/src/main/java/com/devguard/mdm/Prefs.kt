@@ -144,6 +144,8 @@ object Prefs {
 
     // ---- Two-factor (TOTP) ----
     const val TOTP_SECRET = "totpSecret"
+    /** Last accepted two-factor step (B-09: a code can't be used twice). */
+    const val TOTP_LAST_STEP = "totpLastStep"
 
     // ---- Wi-Fi allowlist / updates / NextDNS ----
     fun wifiAllow(c: Context) = set(c, K_WIFI_ALLOW)

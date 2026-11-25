@@ -3,11 +3,14 @@ package com.devguard.mdm
 
 import android.content.Context
 import android.content.pm.PackageInstaller
+import android.content.pm.PackageManager
+import android.content.pm.SigningInfo
 import android.os.Build
 import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
+import java.security.MessageDigest
 
 /**
  * Auto-update from GitHub Releases. Convention: release tag `build-<versionCode>` (e.g. build-3) with one
@@ -63,6 +66,7 @@ object Updater {
         }
         if (conn.responseCode != 200) return "Download failed (HTTP ${conn.responseCode})"
         conn.inputStream.use { inp -> file.outputStream().use { inp.copyTo(it) } }
+        check(c, file, r)?.let { file.delete(); return it } // B-09: right app, newer version, same signing key
 
         val pi = c.packageManager.packageInstaller
         val params = PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL).apply {
@@ -78,13 +82,38 @@ object Updater {
         null
     }.getOrElse { it.message ?: "Update failed" }
 
-    /** Called on screen on: at most once a day, if auto-update is on. */
+    /**
+     * Checks the downloaded APK before handing it to Android (B-09): it must be DeviceGuard, newer than the
+     * installed version, match the release tag, and be signed with the same key. Returns an error or null.
+     */
+    private fun check(c: Context, file: File, r: Release): String? {
+        val pm = c.packageManager
+        val apk = pm.getPackageArchiveInfo(file.path, PackageManager.GET_SIGNING_CERTIFICATES)
+            ?: return "The downloaded file isn't a valid APK"
+        if (apk.packageName != c.packageName) return "The release APK is a different app (${apk.packageName})"
+        val code = apk.longVersionCode
+        if (code <= currentCode(c)) return "The release APK isn't newer (version $code)"
+        if (code != r.code.toLong()) return "The APK's version ($code) doesn't match the tag ${r.tag}"
+        val mine = signers(pm.getPackageInfo(c.packageName, PackageManager.GET_SIGNING_CERTIFICATES).signingInfo)
+        if (mine.isEmpty() || signers(apk.signingInfo) != mine) return "The release APK is signed with a different key"
+        return null
+    }
+
+    private fun signers(info: SigningInfo?): Set<String> = info?.apkContentsSigners.orEmpty()
+        .map { MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).joinToString("") { b -> "%02x".format(b) } }.toSet()
+
+    /** Failed checks retry at most hourly (in memory), instead of waiting a whole day (B-09). */
+    @Volatile private var lastTry = 0L
+
+    /** Called on screen on: at most once a day, if auto-update is on. The day only counts once GitHub answered. */
     fun autoCheck(c: Context) {
         if (!Prefs.getFlag(c, Prefs.UPD_AUTO) || !Mdm(c).isOwner) return
         val now = System.currentTimeMillis()
         if (now - Prefs.getLong(c, Prefs.UPD_LAST) < 24 * 3600_000L) return
-        Prefs.setLong(c, Prefs.UPD_LAST, now)
+        if (now - lastTry < 3600_000L) return
+        lastTry = now
         val r = runCatching { latest(c) }.getOrNull() ?: return
+        Prefs.setLong(c, Prefs.UPD_LAST, now)
         if (r.code > currentCode(c)) install(c, r)
     }
 }

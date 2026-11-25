@@ -27,25 +27,36 @@ object Totp {
     }
 
     fun enable(c: Context, secret: String) = Secrets.put(c, Prefs.TOTP_SECRET, secret) // encrypted (S-03)
-    fun disable(c: Context) = Secrets.put(c, Prefs.TOTP_SECRET, null)
+    fun disable(c: Context) { Secrets.put(c, Prefs.TOTP_SECRET, null); Prefs.setLong(c, Prefs.TOTP_LAST_STEP, 0L) }
 
     fun uri(secret: String) =
         "otpauth://totp/DeviceGuard:Admin?secret=$secret&issuer=DeviceGuard&algorithm=SHA1&digits=6&period=30"
 
     /** Accepts the current code and one step either side (clock drift). */
-    fun verify(secret: String, code: String): Boolean {
+    fun verify(secret: String, code: String): Boolean = matchStep(secret, code, System.currentTimeMillis()) != null
+
+    /** The 30-second step [code] belongs to (now, or one step either side for clock drift), or null. */
+    fun matchStep(secret: String, code: String, nowMs: Long): Long? {
         val c = code.filter { it.isDigit() }
-        if (c.length != 6) return false
-        val step = System.currentTimeMillis() / 1000 / 30
-        return (-1..1).any { code(secret, step + it) == c }
+        if (c.length != 6) return null
+        val step = nowMs / 1000 / 30
+        return (-1L..1L).map { step + it }.firstOrNull { code(secret, it) == c }
     }
 
-    /** True if two-factor is off, or [code] is right. Fails closed: an unreadable secret rejects every code
-     *  (the recovery code or the PC reset still turn two-factor off). */
+    /**
+     * True if two-factor is off, or [code] is right and not used before. Fails closed: an unreadable secret
+     * rejects every code (the recovery code or the PC reset still turn two-factor off).
+     * B-09: each code works once. A code from the same or an earlier step than the last accepted one is refused,
+     * so a code seen over someone's shoulder can't be replayed within its 90-second window.
+     */
+    @Synchronized
     fun verify(ctx: Context, code: String): Boolean {
         if (!enabled(ctx)) return true
         val secret = Secrets.get(ctx, Prefs.TOTP_SECRET) ?: return false
-        return verify(secret, code)
+        val step = matchStep(secret, code, System.currentTimeMillis()) ?: return false
+        if (step <= Prefs.getLong(ctx, Prefs.TOTP_LAST_STEP)) return false
+        Prefs.setLong(ctx, Prefs.TOTP_LAST_STEP, step)
+        return true
     }
 
     private fun code(secret: String, step: Long): String {

@@ -28,18 +28,27 @@ object Branding {
 
     fun value(c: Context, f: Field): String = Prefs.getStr(c, f.key) ?: f.default
 
-    fun set(c: Context, key: String, v: String) { Prefs.setStr(c, key, v.trim()); apply(c) }
+    /** Saves one text and pushes all texts to Android. Returns the titles Android refused (B-06). */
+    fun set(c: Context, key: String, v: String?): List<String> { Prefs.setStr(c, key, v?.trim()); return apply(c) }
 
-    fun resetDefaults(c: Context) { FIELDS.forEach { Prefs.setStr(c, it.key, null) }; apply(c) }
+    fun resetDefaults(c: Context): List<String> { FIELDS.forEach { Prefs.setStr(c, it.key, null) }; return apply(c) }
 
-    /** Pushes the stored (or default) texts to Android. Safe to call often. */
-    fun apply(c: Context) {
+    /** Pushes the stored (or default) texts to Android. Safe to call often. Returns the titles Android refused. */
+    fun apply(c: Context): List<String> {
         val m = Mdm(c)
-        if (!m.isOwner) return
+        if (!m.isOwner) return emptyList()
         fun v(key: String) = FIELDS.first { it.key == key }.let { value(c, it) }.ifBlank { null }
-        runCatching { m.dpm.setOrganizationName(m.admin, v(ORG)) }
-        runCatching { m.dpm.setDeviceOwnerLockScreenInfo(m.admin, v(LOCK)) }
-        runCatching { m.dpm.setShortSupportMessage(m.admin, v(SHORT)) }
-        runCatching { m.dpm.setLongSupportMessage(m.admin, v(LONG)) }
+        val calls = listOf<Pair<String, () -> Unit>>(
+            ORG to { m.dpm.setOrganizationName(m.admin, v(ORG)) },
+            LOCK to { m.dpm.setDeviceOwnerLockScreenInfo(m.admin, v(LOCK)) },
+            SHORT to { m.dpm.setShortSupportMessage(m.admin, v(SHORT)) },
+            LONG to { m.dpm.setLongSupportMessage(m.admin, v(LONG)) },
+        )
+        return calls.filter { (_, call) -> runCatching(call).isFailure }.map { (key, _) -> FIELDS.first { it.key == key }.title }
     }
+
+    /** Toast text after saving: "Saved", or which texts Android didn't accept. */
+    fun result(failed: List<String>, ok: String = "Saved") =
+        if (failed.isEmpty()) ok else "Saved, but Android didn't accept: ${failed.joinToString()}"
+
 }
