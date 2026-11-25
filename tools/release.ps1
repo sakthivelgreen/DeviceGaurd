@@ -4,7 +4,8 @@
 
 .DESCRIPTION
   1. Builds the RELEASE APK (not testOnly, signed with the same key as the installed app).
-  2. Copies it to dist\DeviceGuard.apk and dist\DeviceGuard-<version>.apk.
+  2. Copies it to dist\DeviceGuard.apk and dist\DeviceGuard-<version>.apk, and the R8 mapping to
+     dist\mapping-<version>.txt (needed to read crash stack traces from that release).
   3. With -Upload and $env:GITHUB_TOKEN set: creates the release tag build-<versionCode> and attaches the APK,
      which is what the in-app auto-updater looks for.
 
@@ -35,6 +36,10 @@ try {
     $apk = "app\build\outputs\apk\release\app-release.apk"
     Copy-Item $apk "dist\DeviceGuard.apk" -Force
     Copy-Item $apk "dist\DeviceGuard-$name.apk" -Force
+    # R8 renames classes in release builds: keep each version's mapping to read its crash stack traces
+    # (Android Studio > Build > Analyze APK > Load Proguard mappings, or the retrace tool).
+    $map = "app\build\outputs\mapping\release\mapping.txt"
+    if (Test-Path $map) { Copy-Item $map "dist\mapping-$name.txt" -Force; "Mapping: $root\dist\mapping-$name.txt (keep it)" }
     "APK: $root\dist\DeviceGuard.apk"
 
     if (-not $Upload) { "Not uploaded. Run with -Upload (and `$env:GITHUB_TOKEN) to publish build-$code."; return }

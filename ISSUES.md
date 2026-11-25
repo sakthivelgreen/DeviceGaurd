@@ -30,7 +30,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [B-09](#b-09-smaller-bugs) | P3 | [ ] | Smaller bugs (usage before midnight, plaintext VPN DNS, update check timer) |
 | [R-01](#r-01-dead-code-office-split-dns-and-doh) | P2 | [x] | Remove dead code: office split DNS + DoH |
 | [R-02](#r-02-other-unused-code) | P3 | [x] | Remove other unused functions and wrappers |
-| [R-03](#r-03-decide-on-the-vpn-filter) | P2 | [ ] | Decide: fix or remove the VPN filter |
+| [R-03](#r-03-decide-on-the-vpn-filter) | P2 | [~] | Decide: fix or remove the VPN filter |
 | [R-04](#r-04-location-permission-self-grant) | P3 | [-] | Location permission self-grant (kept on request) |
 | [D-01](#d-01-notifications) | P2 | [x] | DRY: notification building (7 copies) |
 | [D-02](#d-02-installed-apps-and-labels) | P2 | [x] | DRY: installed-app list + label lookups (10 files) |
@@ -40,9 +40,9 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [D-06](#d-06-two-preference-styles) | P3 | [x] | DRY: two preference styles; export key lists can drift |
 | [A-01](#a-01-one-reconciler-for-app-state) | P2 | [x] | Architecture: one reconciler for suspended/hidden apps |
 | [A-02](#a-02-split-featureskt) | P3 | [x] | Architecture: split Features.kt (734 lines, 8 features) |
-| [A-03](#a-03-application-class-and-workmanager) | P3 | [~] | Architecture: Application class + WorkManager for periodic jobs |
-| [A-04](#a-04-tests-and-build) | P3 | [ ] | Unit tests for pure logic; enable R8 for release |
-| [A-05](#a-05-strings-and-ui) | P3 | [ ] | UI: strings.xml, partial re-render instead of full page rebuild |
+| [A-03](#a-03-application-class-and-workmanager) | P3 | [x] | Architecture: Application class + WorkManager for periodic jobs |
+| [A-04](#a-04-tests-and-build) | P3 | [~] | Unit tests for pure logic; enable R8 for release |
+| [A-05](#a-05-strings-and-ui) | P3 | [-] | UI: strings.xml, partial re-render instead of full page rebuild |
 
 ---
 
@@ -221,7 +221,7 @@ Unused since the VPN backup was removed on 2026-11-23: `office`, `isOffice`, `fo
 - [x] `UNINSTALL_RESULT` / `UPDATE_RESULT` broadcasts: add a receiver ([B-06](#b-06-failures-are-hidden)) or delete them
 
 ### R-03 Decide on the VPN filter
-**P2 · [ ]** · `Services.kt` (`DnsVpnService`), `Features.kt` (`WebFilter`), `WebActivity.kt`
+**P2 · [~] decided 2026-11-25: remove** · `Services.kt` (`DnsVpnService`), `Features.kt` (`WebFilter`), `WebActivity.kt`
 
 About 250 lines plus the consent flow and Private-DNS-versus-VPN switching. It was the main source of app breakage, and the NextDNS denylist now covers "my site list in every app". Either remove it, or keep it and fix [B-01](#b-01-vpn-filter-blocks-all-ipv6).
 
@@ -291,25 +291,25 @@ Each feature declares which apps it wants suspended or hidden (manual, approval,
 One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Kiosk`, `Blocklist`, `Approval`. Done: one `.kt` file each (`onDomainsChanged` is in `WebFilter.kt`); `Features.kt` removed. Paths in older items still say `Features.kt`.
 
 ### A-03 Application class and WorkManager
-**P3 · [~] partly done 2026-11-25**
+**P3 · [x] done 2026-11-25 (WorkManager: won't fix)**
 
 - An `Application` subclass for notification channels, the `Mdm` instance and the app repository.
 - WorkManager for the daily update check and periodic checks, instead of everything on `TIME_TICK` inside the always-on service. Screen time re-reads all usage since midnight every minute; cache it.
 
 - [x] `DeviceGuardApp` (Application): creates all notification channels once per process start; `Notify.build` no longer creates a channel on every notification.
 - [x] Screen time reads today's usage incrementally (only events since the last check), with a full re-read every 10 minutes to self-correct and on a new day or clock change. The past-days view still reads each day fully.
-- [ ] WorkManager for the daily update check: waiting for your decision. The always-on `GuardService` is needed anyway (package-added receiver, settings observers), and the update check now retries hourly after a failure (B-09), so WorkManager would add a library for little gain.
+- [-] WorkManager for the daily update check: won't fix (decided 2026-11-25). The always-on `GuardService` is needed anyway (package-added receiver, settings observers), and the update check now retries hourly after a failure (B-09), so WorkManager would add a library for little gain.
 
 
 ### A-04 Tests and build
-**P3 · [ ]**
-- [ ] Unit tests for pure logic: `ScreenTime.isActive`, DNS packet parsing (`question`, `nxdomain`), `Totp`, `Blocklist.parse`, `WebFilter.normalize`
-- [ ] Enable R8 (`isMinifyEnabled = true`, `shrinkResources`) for release, with keep rules for the admin receiver and services
+**P3 · [~] mostly done 2026-11-25**
+- [x] Unit tests for pure logic: `ScreenTime.isActive`, DNS packet parsing (`question`, `nxdomain`), `Totp`, `Blocklist.parse`, `WebFilter.normalize`. Done: 13 tests in `app/src/test/.../LogicTest.kt` (schedules incl. overnight and Sunday, RFC 6238 vectors, clock drift, Play links, domains, PIN rules), all passing. DNS packet parsing is private inside `DnsVpnService`; testing it waits on [R-03](#r-03-decide-on-the-vpn-filter) (no point if the VPN filter is removed).
+- [~] Enable R8 (`isMinifyEnabled = true`, `shrinkResources`) for release, with keep rules for the admin receiver and services. Done in the build (`proguard-rules.pro`: enums kept by name, line numbers kept); the release build passes. Still to check: the R8 build on the phone (`assembleDebug -PminifyDebug`) before the next published release.
 
 ### A-05 Strings and UI
-**P3 · [ ]**
-- [ ] Move UI text to `res/values/strings.xml`
-- [ ] Re-render only the changed card instead of the whole page (fixes [B-07](#b-07-typed-text-lost-on-page-refresh))
+**P3 · [-] won't fix (decided 2026-11-25)**
+- [-] Move UI text to `res/values/strings.xml`: single-language personal app; a huge diff for no visible gain
+- [-] Re-render only the changed card instead of the whole page: B-07 was fixed another way (`keepText`)
 - [x] Cache row status in the Apps list instead of six system calls per row while scrolling (P-01)
 
 ---
@@ -330,5 +330,6 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 | P-01 | 2026-11-25 | see git log | System calls off the main thread; release in the background with a `releasing` guard |
 | P-02, D-02, D-03, B-07 | 2026-11-25 | see git log | `Apps.kt`, background lists and icons, no raw threads, typed text kept |
 | A-02 | 2026-11-25 | see git log | Features.kt split into 7 files |
+| A-04 (part) | 2026-11-25 | see git log | Unit tests, R8 for release, Maven Central mirror |
 | D-06, A-03 (part) | 2026-11-25 | see git log | One key style + NOT_EXPORTED in Prefs; Application class; incremental usage |
 | B-09 (4 of 5), D-05, B-06 | 2026-11-25 | see git log | TOTP replay, update check timing + APK check, usage before midnight; one DoT test; app ID from BuildConfig; branding/Wi-Fi errors shown |

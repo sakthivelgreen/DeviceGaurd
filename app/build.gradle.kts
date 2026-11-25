@@ -57,13 +57,27 @@ android {
             if (keystoreProps.getProperty("storeFile") != null) signingConfig = signingConfigs.getByName("release")
             // testOnly = ADB escape hatch (dpm remove-active-admin). Debug builds keep it.
             manifestPlaceholders["testOnly"] = "true"
+            // Test the release R8 rules on the phone, keeping the debug escape hatch:
+            //   gradlew assembleDebug -PminifyDebug
+            if (project.hasProperty("minifyDebug")) {
+                isMinifyEnabled = true
+                isShrinkResources = true
+                proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            }
         }
         release {
-            isMinifyEnabled = false
+            // A-04: R8 shrinks and obfuscates the release APK; keep rules in proguard-rules.pro.
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
             // Release builds can be installed by QR provisioning and the auto-updater (no testOnly).
             manifestPlaceholders["testOnly"] = "false"
         }
+    }
+    testOptions {
+        // Unit tests run on the PC: Android calls return defaults instead of throwing.
+        unitTests.isReturnDefaultValues = true
     }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
@@ -83,4 +97,5 @@ dependencies {
     implementation("com.google.android.material:material:1.12.0")
     implementation("androidx.recyclerview:recyclerview:1.3.2")
     implementation("com.google.zxing:core:3.5.3") // QR codes (authenticator setup, provisioning)
+    testImplementation("junit:junit:4.13.2") // A-04: unit tests for pure logic (src/test)
 }

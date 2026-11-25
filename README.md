@@ -286,6 +286,12 @@ $adb = ".\platform-tools\adb.exe"
 
 **Clean build:** `.\gradlew.bat clean assembleDebug`
 
+**Unit tests** (pure logic: schedules, two-factor codes, blocked-app links, website names, PIN rules): `.\gradlew.bat testDebugUnitTest`. Report: `app\build\reports\tests\testDebugUnitTest\index.html`.
+
+**R8:** release builds are shrunk and obfuscated (keep rules: `app\proguard-rules.pro`). To try the R8 build on the phone and keep the ADB escape hatch, build `.\gradlew.bat assembleDebug -PminifyDebug` and install it as above. `tools\release.ps1` also saves each release's R8 mapping as `dist\mapping-<version>.txt`: it turns that release's crash stack traces back into readable names, so back it up with the keystore.
+
+**Maven Central is blocked on the development network** (`repo.maven.apache.org` answers 404). `settings.gradle.kts` lists Google's mirror of Maven Central first, so builds work there. Never run `--refresh-dependencies` with only Maven Central listed: Gradle then marks every cached library as missing and every build fails.
+
 **Release build and publishing** (for QR provisioning and auto-update): raise `versionCode`/`versionName` in `app\build.gradle.kts`, then:
 ```powershell
 cd D:\TV_CLEANUP\MDM_App\tools
@@ -780,6 +786,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | **Private DNS vs VPN filter** | A forced Private DNS host sends DNS-over-TLS straight to that host, bypassing the VPN, so the app keeps them mutually exclusive. |
 | **`setGlobalPrivateDnsModeSpecifiedHost` blocks** | It tests the host over the network, so it's called on a background thread. |
 | **System calls are slow on the main thread** | Each DPM/PackageManager call crosses into the system process. The dashboard, Restrictions page and Apps rows read each value once per render; loops over all ~400 packages (Apps status, export, release) run in `inBackground` (P-01). |
+| **Maven Central blocked on the development network** | `repo.maven.apache.org` answers 404 (Cloudflare, `Retry-After`). `settings.gradle.kts` lists Google's mirror (`maven-central.storage-download.googleapis.com/maven2`) before `mavenCentral()` for plugins and libraries. |
 | **Implicit broadcasts** | `PACKAGE_ADDED` can't be received by a manifest receiver, so `GuardService` (foreground, `specialUse`) registers it at runtime. |
 | **"Unaffiliated users" error (Private DNS filter)** | Phone-wide policies such as Private DNS need **every user to be affiliated** with the Device Owner. Private Space can never be affiliated (Android doesn't allow an admin inside it), so the app can't set Private DNS while it exists. **Workarounds that keep Private Space:** (1) set Private DNS **from the PC** (see *Websites → Private Space on the phone* in §7), whole phone; (2) VPN filter + Family-safe upstream, main profile only; (3) Chrome rules. Check users with `adb shell pm list users`. |
 | **vivo ignores "Lock Private DNS"** | The restriction is applied (`dumpsys device_policy` shows `disallow_config_private_dns = true`), but vivo's custom Private DNS screen doesn't check it. Fix: `WRITE_SECURE_SETTINGS` granted over ADB. `GuardService` watches `private_dns_mode`/`private_dns_specifier` with a `ContentObserver` and restores the chosen host (`PrivateDns.enforce`). |
@@ -870,5 +877,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-25 | **B-09, D-05, B-06:** two-factor codes work only once; the daily update check only counts after GitHub answers (failures retry hourly); a downloaded update is checked (same app, newer version matching the tag, same signing key) before installing; screen time counts an app that was already open at midnight; one DNS-over-TLS test for Private DNS and Smart DNS; ADB commands use the build's app ID; Branding and Wi-Fi allowlist show when Android refuses a change. |
 | 2026-11-25 | **A-02:** `Features.kt` (666 lines, 7 features) split into `WebFilter.kt`, `PrivateDns.kt`, `SmartDns.kt`, `ChromePolicy.kt`, `Kiosk.kt`, `Blocklist.kt`, `Approval.kt`; code unchanged. |
 | 2026-11-25 | **D-06, A-03:** all preference keys are constants in `Prefs`, and the list of keys never exported (`Prefs.NOT_EXPORTED`) lives next to them; export also skips any encrypted value, so a future secret can't leak. New `DeviceGuardApp` creates notification channels once; screen time reads only new usage events each minute (full re-read every 10 min). |
+| 2026-11-25 | **A-04:** 13 unit tests for pure logic (`app\src\test`, `gradlew testDebugUnitTest`); R8 shrinking and obfuscation for release builds (`proguard-rules.pro`), and `-PminifyDebug` to try R8 on the phone. Builds use Google's mirror of Maven Central, which is blocked on the development network. |
 
 © Sakthivel J
