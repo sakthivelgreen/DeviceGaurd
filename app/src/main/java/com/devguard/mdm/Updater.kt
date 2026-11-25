@@ -6,7 +6,6 @@ import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.content.pm.SigningInfo
 import android.os.Build
-import org.json.JSONObject
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -15,7 +14,7 @@ import java.security.MessageDigest
 /**
  * Auto-update from GitHub Releases. Convention: release tag `build-<versionCode>` (e.g. build-3) with one
  * `.apk` asset named DeviceGuard.apk (the RELEASE build, signed with the same key). The repo is public, so no
- * token is needed (GitHub allows 60 unauthenticated checks an hour per phone). As Device Owner the install is silent.
+ * token is needed, and no rate-limited API is used. As Device Owner the install is silent.
  * Only APKs signed with this app's key are installed (see [check]); publishing needs the write token on the PC.
  */
 object Updater {
@@ -40,21 +39,23 @@ object Updater {
             setRequestProperty("User-Agent", "DeviceGuard-MDM")
         }
 
-    /** Latest release, or throws with a readable message. Blocking. */
+    /**
+     * Latest release, or throws with a readable message. Blocking.
+     * Uses github.com's "releases/latest" redirect (→ …/releases/tag/build-3) instead of the REST API: the API allows
+     * only 60 unauthenticated calls an hour per public IP, which a shared office or home network can use up.
+     */
     fun latest(c: Context): Release {
-        val conn = open("https://api.github.com/repos/${repo(c)}/releases/latest", "application/vnd.github+json")
+        val conn = open("https://github.com/${repo(c)}/releases/latest", "text/html").apply { instanceFollowRedirects = false }
         val code = conn.responseCode
-        if (code == 404) throw IllegalStateException("No release found in ${repo(c)}")
-        if (code == 403 || code == 429) throw IllegalStateException("GitHub limit reached (60 checks an hour). Try again later.")
-        if (code != 200) throw IllegalStateException("GitHub error HTTP $code")
-        val o = JSONObject(conn.inputStream.bufferedReader().readText())
-        val tag = o.optString("tag_name")
+        val location = conn.getHeaderField("Location").orEmpty()
+        conn.disconnect()
+        if (code == 404) throw IllegalStateException("Repository ${repo(c)} not found (is it public?)")
+        if (code !in 300..399) throw IllegalStateException("GitHub error HTTP $code")
+        val tag = location.substringAfter("/releases/tag/", "").substringBefore('?')
+        if (tag.isEmpty()) throw IllegalStateException("No release published in ${repo(c)} yet")
         val vc = Regex("(\\d+)$").find(tag)?.groupValues?.get(1)?.toIntOrNull()
             ?: throw IllegalStateException("Release tag \"$tag\" must look like build-3")
-        val assets = o.optJSONArray("assets") ?: throw IllegalStateException("Release has no files")
-        val apk = (0 until assets.length()).map { assets.getJSONObject(it) }.firstOrNull { it.optString("name").endsWith(".apk") }
-            ?: throw IllegalStateException("Release has no .apk file")
-        return Release(vc, tag, apk.optString("browser_download_url"), o.optString("body"))
+        return Release(vc, tag, "https://github.com/${repo(c)}/releases/download/$tag/DeviceGuard.apk", "")
     }
 
     /** Downloads and silently installs [r]. Returns null when the install was handed to Android, or an error. */
