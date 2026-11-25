@@ -19,6 +19,7 @@ object Profile {
         *Hold.values().map { it.key }.toTypedArray(),
     )
 
+    /** The profile as JSON. Slow (one system call per installed package): call it off the main thread. */
     fun export(c: Context): String {
         val m = Mdm(c)
         val prefs = JSONObject()
@@ -28,13 +29,13 @@ object Profile {
         }
         val apps = c.packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).map { it.packageName }
         val dpm = JSONObject()
-            .put("restrictions", JSONArray(RESTRICTION_GROUPS.flatMap { it.second }.filter { m.hasRestriction(it.key) }.map { it.key }))
+            .put("restrictions", m.restrictions().let { r -> JSONArray(RESTRICTION_GROUPS.flatMap { it.second }.filter { r.getBoolean(it.key) }.map { it.key }) })
             .put("camera", runCatching { m.dpm.getCameraDisabled(m.admin) }.getOrDefault(false))
             .put("screenCapture", runCatching { m.dpm.getScreenCaptureDisabled(m.admin) }.getOrDefault(false))
             // Only YOUR hides/pauses; feature-owned ones (screen time, approval, Chrome-only, blocklist) are rebuilt.
             .put("hidden", JSONArray(Holds.get(c, Hold.HIDE_MANUAL).toList()))
             .put("suspended", JSONArray(Holds.get(c, Hold.SUSPEND_MANUAL).toList()))
-            .put("uninstallBlocked", JSONArray(apps.filter { m.isUninstallBlocked(it) && it != c.packageName }))
+            .put("uninstallBlocked", JSONArray(apps.filter { it != c.packageName && m.isUninstallBlocked(it) }))
             .put("systemUpdate", Device.updateMode(c))
         return JSONObject().put("app", "DeviceGuard MDM").put("version", 1).put("created", System.currentTimeMillis())
             .put("prefs", prefs).put("device", dpm).toString(2)

@@ -2,7 +2,6 @@
 package com.devguard.mdm
 
 import android.Manifest
-import android.app.Activity
 import android.app.admin.DeviceAdminReceiver
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -10,6 +9,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import android.os.UserManager
 
 class AdminReceiver : DeviceAdminReceiver() {
@@ -67,27 +67,35 @@ class Mdm(private val c: Context) {
     val admin = ComponentName(c, AdminReceiver::class.java)
     val pkg: String = c.packageName
 
+    /** A system call each time: read it once per screen (`val owner = m.isOwner`), not per row. */
     val isOwner: Boolean get() = dpm.isDeviceOwnerApp(pkg)
 
-    fun hasRestriction(key: String) = isOwner && dpm.getUserRestrictions(admin).getBoolean(key)
+    // Reads below are ONE system call each (P-01). They don't ask isOwner first: Android refuses these calls
+    // when we aren't Device Owner, and runCatching turns that refusal into "no".
+
+    /** Every user restriction this app has set, in one call. Empty when not Device Owner. */
+    fun restrictions(): Bundle = runCatching { dpm.getUserRestrictions(admin) }.getOrDefault(Bundle.EMPTY)
+    /** One restriction. To check several, read [restrictions] once instead. */
+    fun hasRestriction(key: String) = restrictions().getBoolean(key)
+    fun activeRestrictionCount(r: Bundle = restrictions()) = RESTRICTION_GROUPS.sumOf { g -> g.second.count { r.getBoolean(it.key) } }
     fun setRestriction(key: String, on: Boolean) {
         if (on) dpm.addUserRestriction(admin, key) else dpm.clearUserRestriction(admin, key)
     }
 
-    fun isHidden(p: String) = isOwner && runCatching { dpm.isApplicationHidden(admin, p) }.getOrDefault(false)
+    fun isHidden(p: String) = runCatching { dpm.isApplicationHidden(admin, p) }.getOrDefault(false)
     fun setHidden(p: String, on: Boolean): Boolean = dpm.setApplicationHidden(admin, p, on)
 
-    fun isSuspended(p: String) = isOwner && runCatching { dpm.isPackageSuspended(admin, p) }.getOrDefault(false)
+    fun isSuspended(p: String) = runCatching { dpm.isPackageSuspended(admin, p) }.getOrDefault(false)
     /** Returns the packages that could NOT be changed. */
     fun setSuspended(p: Collection<String>, on: Boolean): List<String> =
         dpm.setPackagesSuspended(admin, p.toTypedArray(), on).toList()
 
-    fun isUninstallBlocked(p: String) = isOwner && runCatching { dpm.isUninstallBlocked(admin, p) }.getOrDefault(false)
+    fun isUninstallBlocked(p: String) = runCatching { dpm.isUninstallBlocked(admin, p) }.getOrDefault(false)
     fun setUninstallBlocked(p: String, on: Boolean) = dpm.setUninstallBlocked(admin, p, on)
 
     /** Self-protection applied whenever we are device owner. */
     fun ensureBaseline() {
-        if (!isOwner) return
+        if (releasing || !isOwner) return // never re-protect while Release all is undoing everything
         runCatching { dpm.setUninstallBlocked(admin, pkg, true) }
         Branding.apply(c) // organization name + lock screen / support messages
         runCatching { Holds.migrate(c) } // one-time: record existing manual pauses/hides (B-02)
@@ -100,29 +108,42 @@ class Mdm(private val c: Context) {
         }
     }
 
-    /** Undo every policy and give up device ownership. */
-    fun releaseAll(a: Activity) {
-        Kiosk.stop(a)
-        WebFilter.disable(a)
-        Approval.disable(a)
-        ChromePolicy.clear(a)
-        runCatching { PrivateDns.apply(a, null) }
-        RESTRICTION_GROUPS.flatMap { it.second }.forEach { r -> runCatching { dpm.clearUserRestriction(admin, r.key) } }
-        runCatching { dpm.setCameraDisabled(admin, false) }
-        runCatching { dpm.setScreenCaptureDisabled(admin, false) }
-        a.packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).forEach {
-            val p = it.packageName
-            if (isHidden(p)) runCatching { setHidden(p, false) }
-            if (isSuspended(p)) runCatching { setSuspended(listOf(p), false) }
-            if (isUninstallBlocked(p)) runCatching { setUninstallBlocked(p, false) }
+    /**
+     * Undo every policy and give up device ownership. Slow (checks all ~400 packages), so it runs on a
+     * background thread (P-01); call [Kiosk.stop] on the main thread first (Android needs that for lock task).
+     * While it runs, [releasing] stops other features from hiding or pausing apps again.
+     */
+    fun releaseAll() {
+        releasing = true
+        try {
+            WebFilter.disable(c)
+            Approval.disable(c)
+            ChromePolicy.clear(c)
+            runCatching { PrivateDns.apply(c, null) }
+            RESTRICTION_GROUPS.flatMap { it.second }.forEach { r -> runCatching { dpm.clearUserRestriction(admin, r.key) } }
+            runCatching { dpm.setCameraDisabled(admin, false) }
+            runCatching { dpm.setScreenCaptureDisabled(admin, false) }
+            c.packageManager.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES).forEach {
+                val p = it.packageName
+                if (isHidden(p)) runCatching { setHidden(p, false) }
+                if (isSuspended(p)) runCatching { setSuspended(listOf(p), false) }
+                if (isUninstallBlocked(p)) runCatching { setUninstallBlocked(p, false) }
+            }
+            Holds.clearAll(c) // nothing is held any more
+            runCatching { dpm.setUninstallBlocked(admin, pkg, false) }
+            @Suppress("DEPRECATION")
+            dpm.clearDeviceOwnerApp(pkg)
+        } catch (e: Exception) {
+            releasing = false // still Device Owner: features work again; tap Release again to retry
+            throw e
         }
-        Holds.clearAll(a) // nothing is held any more
-        runCatching { dpm.setUninstallBlocked(admin, pkg, false) }
-        @Suppress("DEPRECATION")
-        dpm.clearDeviceOwnerApp(pkg)
     }
 
     companion object {
         const val PLAY_STORE = "com.android.vending"
+
+        /** True while (and after) Danger zone → Release runs: nothing may hide or pause apps again. */
+        @Volatile var releasing = false
+            private set
     }
 }

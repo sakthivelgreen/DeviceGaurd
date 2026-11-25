@@ -22,7 +22,7 @@ Paths are relative to `app/src/main/java/com/devguard/mdm/` unless they start wi
 | [S-03](#s-03-secrets-stored-in-plain-text) | P2 | [x] | API key, GitHub token and TOTP secret stored in plain text |
 | [S-04](#s-04-weak-brute-force-protection) | P2 | [x] | Weak brute-force protection (4-digit PIN, in-memory lockout) |
 | [B-05](#b-05-clock-changes-defeat-time-rules) | P2 | [x] | Changing the clock defeats screen time and session timeout |
-| [P-01](#p-01-heavy-binder-work-on-the-main-thread) | P2 | [ ] | Heavy system calls on the main thread (dashboard, export, release, Apps list) |
+| [P-01](#p-01-heavy-binder-work-on-the-main-thread) | P2 | [x] | Heavy system calls on the main thread (dashboard, export, release, Apps list) |
 | [B-06](#b-06-failures-are-hidden) | P2 | [x] | Failures are hidden; uninstall/update results go nowhere |
 | [B-07](#b-07-typed-text-lost-on-page-refresh) | P2 | [ ] | Typed text lost when a page re-renders |
 | [B-08](#b-08-concurrent-preference-writes) | P2 | [x] | Concurrent read-modify-write of preference sets can lose updates |
@@ -88,6 +88,31 @@ The NextDNS API key, GitHub token and TOTP secret are plain SharedPreferences va
 - [x] Lockout stored in prefs, shared by PIN, recovery code and two-factor code: 5 free tries, then 30 s doubling up to 1 h. A reboot clears the wait but not the count.
 - [x] `Session` uses `SystemClock.elapsedRealtime()`.
 - [x] Verified on the phone after unlock (2026-11-24): `pinAlgo = pbkdf2-sha256:100000`, lockout counters 0. The recovery code is still in the old format until it's used or a new one is created (Settings → Create a new recovery code).
+
+---
+
+## Performance
+
+### P-01 Heavy binder work on the main thread
+**P2 · [x] fixed 2026-11-25** · `Mdm.kt`, `Ui.kt` (`inBackground`), `MainActivity.kt`, `AppsActivity.kt`, `RestrictionsActivity.kt`, `SettingsActivity.kt`, `Profile.kt`, `Holds.kt`, `Services.kt`
+
+Every DevicePolicyManager / PackageManager question is a call into Android's system process, made on the thread that draws the screen. Measured before the fix (2026-11-25, normal use): 27 slow UI-thread frames, 99th percentile 150 ms. Calls per action (400 packages on the phone):
+
+| Place | Before | After |
+|---|---|---|
+| Dashboard, each open/return | ~70 on the main thread, 6 of them writes | ~4 reads; writes (`ensureBaseline`, `GuardService.refresh`) in the background |
+| Restrictions page, each redraw / switch tap | ~100 (2 per check × 2 checks per switch) | 1 restrictions read + camera/screenshot |
+| Apps list | 7 per row each time a row appears | 0 while scrolling; status read in the background on load / return, 4 calls for the one app you change |
+| Export profile | ~850 + file write on the main thread | ~400, in the background |
+| Danger zone → Release | ~2,400 + undoing every hold, on the main thread (ANR after 5 s; "Close app" stops it halfway) | ~1,200, in the background behind a dialog that can't be dismissed |
+
+- [x] `Mdm` reads (`isHidden`, `isSuspended`, `isUninstallBlocked`) no longer ask `isOwner` first (Android refuses them when we aren't owner; `runCatching` → false). Half the calls everywhere.
+- [x] `Mdm.restrictions()` reads all restrictions in one call; `activeRestrictionCount()`; dashboard, Restrictions page and export use it.
+- [x] `inBackground(work) { result -> }` in `Ui.kt`: shared thread pool, result only delivered if the screen is still open, errors as a toast. [D-03](#d-03-background-threads) converts the remaining `Thread { }` copies to it.
+- [x] Release: `Mdm.releasing` flag. While set, `Holds.set(on = true)` refuses, the package-added receiver ignores unhides, and `ensureBaseline` doesn't re-protect, so nothing re-hides an app or re-blocks DeviceGuard's uninstall while release runs. On failure the flag is cleared (still Device Owner) and the dialog says to tap Release again.
+- [x] Built, installed (2026-11-25): still Device Owner, no crash.
+- [ ] Check on the phone: frame stats after using the dashboard, Apps list (scroll with system apps shown) and Restrictions; export a profile and check its content.
+- Release is NOT tested on the phone on purpose: it removes Device Owner, which needs a factory reset to get back. Reviewed in code only.
 
 ---
 
@@ -204,7 +229,7 @@ Each loads `getInstalledApplications` + labels on its own thread; 10 files look 
 ### D-03 Background threads
 **P2 · [ ]** · 28 copies in Apps, Background, ScreenTime, Settings, Web activities
 
-`Thread { … runOnUiThread { if (!isFinishing) … } }` with no cancellation. Fix: `lifecycleScope.launch { withContext(IO) { … } }`.
+`Thread { … runOnUiThread { if (!isFinishing) … } }` with no cancellation. Fix: convert each to `inBackground(work) { result -> }` (`Ui.kt`, added in P-01; Apps force stop already uses it). Later the helper itself can switch to `lifecycleScope` + coroutines in one place.
 
 ### D-04 Unlock and credential logic
 **P2 · [x] done 2026-11-24**
@@ -220,7 +245,7 @@ Each loads `getInstalledApplications` + labels on its own thread; 10 files look 
 - [ ] Silent uninstall: `AppsActivity.uninstall` and `Blocklist.remove` → `AppControl.uninstall`
 - [ ] `com.devguard.mdm` hardcoded in 6 ADB command strings → build from `BuildConfig.APPLICATION_ID`
 - [ ] `guardOff` helper in `WebActivity` and `RestrictionsActivity`
-- [ ] `Mdm(c)` created in 51 places, `isOwner` re-queried each time; `hasRestriction` reads the whole restrictions bundle per key → read once per screen
+- [ ] `Mdm(c)` created in 51 places, `isOwner` re-queried each time; `hasRestriction` reads the whole restrictions bundle per key → read once per screen (done for dashboard, Restrictions, export in P-01 via `Mdm.restrictions()`)
 
 ### D-06 Two preference styles
 **P3 · [ ]** · `Prefs.kt`, `Profile.kt:14-18`
@@ -256,7 +281,7 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 **P3 · [ ]**
 - [ ] Move UI text to `res/values/strings.xml`
 - [ ] Re-render only the changed card instead of the whole page (fixes [B-07](#b-07-typed-text-lost-on-page-refresh))
-- [ ] Cache row status in the Apps list instead of six system calls per row while scrolling
+- [x] Cache row status in the Apps list instead of six system calls per row while scrolling (P-01)
 
 ---
 
@@ -273,3 +298,4 @@ One file per feature: `WebFilter`, `PrivateDns`, `SmartDns`, `ChromePolicy`, `Ki
 | B-02 / A-01 | 2026-11-24 | see git log | Holds.kt: per-feature pause/hide lists; migration verified on the phone |
 | S-04, B-05, B-06, B-08, R-01, R-02, D-01, D-04 | 2026-11-24 | see git log | Group 2 |
 | S-03 | 2026-11-25 | see git log | Secrets encrypted with Android Keystore |
+| P-01 | 2026-11-25 | see git log | System calls off the main thread; release in the background with a `releasing` guard |

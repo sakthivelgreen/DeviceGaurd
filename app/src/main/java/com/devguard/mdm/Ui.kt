@@ -8,6 +8,8 @@ import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
+import android.os.Handler
+import android.os.Looper
 import android.text.InputType
 import android.util.TypedValue
 import android.view.Gravity
@@ -27,6 +29,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import java.util.concurrent.Executors
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.materialswitch.MaterialSwitch
@@ -37,6 +40,25 @@ fun Context.toast(msg: String?) = Toast.makeText(this, msg ?: "Error", Toast.LEN
 /** Runs [block], showing any exception as a toast instead of crashing. */
 fun Context.act(block: () -> Unit) {
     try { block() } catch (e: Exception) { toast(e.message ?: e.javaClass.simpleName) }
+}
+
+/** Shared threads for screen work that would block drawing: many system calls, files (P-01). */
+private val screenWork = Executors.newCachedThreadPool()
+private val mainThread = Handler(Looper.getMainLooper())
+
+/**
+ * Runs [work] off the main thread, then [done] with its result on the main thread, but only if this screen
+ * is still open. If [work] throws, the error is shown as a toast and [done] isn't called.
+ */
+fun <T> Activity.inBackground(work: () -> T, done: (T) -> Unit = {}) {
+    val app = applicationContext
+    screenWork.execute {
+        val r = runCatching { work() }
+        mainThread.post {
+            r.onFailure { app.toast(it.message ?: it.javaClass.simpleName) }
+            r.onSuccess { if (!isFinishing && !isDestroyed) done(it) }
+        }
+    }
 }
 
 /** Sets content with padding for system bars (target SDK 36 is always edge-to-edge). */

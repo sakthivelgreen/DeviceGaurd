@@ -39,6 +39,7 @@ object Holds {
     @Synchronized
     fun set(c: Context, h: Hold, pkgs: Collection<String>, on: Boolean): List<String> {
         if (pkgs.isEmpty()) return emptyList()
+        if (on && Mdm.releasing) return pkgs.toList() // Release all is undoing every hold: don't add new ones
         val before = get(c, h)
         Prefs.setSet(c, h.key, if (on) before + pkgs else before - pkgs.toSet())
         val failed = apply(c, h.hide, pkgs)

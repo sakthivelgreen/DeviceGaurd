@@ -17,7 +17,8 @@ class RestrictionsActivity : BaseActivity() {
     private fun render() {
         val m = Mdm(this)
         val owner = m.isOwner
-        val active = RESTRICTION_GROUPS.flatMap { it.second }.count { m.hasRestriction(it.key) }
+        val rs = m.restrictions() // read once for the whole page, not twice per switch (P-01)
+        val active = m.activeRestrictionCount(rs)
         scrollPage("Restrictions", back = true, subtitle = "$active active") {
             if (!owner) card { text("⚠️ Device Owner required for these controls", 14f, bold = true, color = Palette.ORANGE) }
 
@@ -95,7 +96,7 @@ class RestrictionsActivity : BaseActivity() {
             RESTRICTION_GROUPS.forEach { (group, items) ->
                 card(group) {
                     items.forEach { r ->
-                        switchRow(r.title, r.note, m.hasRestriction(r.key), owner) { sw, on ->
+                        switchRow(r.title, r.note, rs.getBoolean(r.key), owner) { sw, on ->
                             if (on && r.danger) {
                                 confirm("Are you sure?", r.note ?: "", "Turn on") {
                                     act { m.setRestriction(r.key, true); sw.setSilently(true) }

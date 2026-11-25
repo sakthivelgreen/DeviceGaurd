@@ -102,10 +102,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun dashboard() {
         val m = Mdm(this)
-        m.ensureBaseline()
-        GuardService.refresh(this)
+        // Self-protection, branding and the guard service are re-applied each time, off the main thread (P-01):
+        // they are system writes that don't change what this page shows.
+        inBackground({ m.ensureBaseline(); GuardService.refresh(applicationContext) })
 
-        val activeRestrictions = RESTRICTION_GROUPS.flatMap { it.second }.count { m.hasRestriction(it.key) }
+        // About 4 quick system reads; everything else here comes from preferences.
+        val owner = m.isOwner
+        val activeRestrictions = m.activeRestrictionCount()
         val dnsOn = PrivateDns.currentHost(this) != null
         // "On" only when a DNS-level filter protects all browsers/apps (Chrome rules alone don't count).
         val webOn = WebFilter.anyFilterActive(this) || dnsOn
@@ -117,9 +120,9 @@ class MainActivity : AppCompatActivity() {
 
         scrollPage("DeviceGuard", subtitle = "MDM · by ${getString(R.string.author)}") {
             statusCard(
-                ok = m.isOwner,
-                headline = if (m.isOwner) "Device protected" else "Setup needed",
-                detail = if (m.isOwner) "Device Owner · full control active" else "Not Device Owner: controls are disabled",
+                ok = owner,
+                headline = if (owner) "Device protected" else "Setup needed",
+                detail = if (owner) "Device Owner · full control active" else "Not Device Owner: controls are disabled",
                 pills = listOf(
                     "Web ${if (webOn) "ON" else "off"}",
                     "Approval ${if (Prefs.approvalMode(context)) "ON" else "off"}",
@@ -132,7 +135,7 @@ class MainActivity : AppCompatActivity() {
                 text("If you forget the PIN, a recovery code lets you reset it on the phone. Create one now and keep it safe.", 13f)
                 button("Create recovery code") { showRecoveryCodeDialog(Prefs.newRecoveryCode(this@MainActivity)) { render() } }
             }
-            if (!m.isOwner) card {
+            if (!owner) card {
                 text("Make this app Device Owner from a PC (the phone must have no accounts):", 13f)
                 text("adb shell dpm set-device-owner $packageName/.AdminReceiver", 12f, bold = true).setTextIsSelectable(true)
                 text("Full steps: README.md §6", 12f).alpha = 0.6f
@@ -176,8 +179,8 @@ class MainActivity : AppCompatActivity() {
 
             section("Quick actions")
             tileGrid(listOf(
-                Tile("Lock now", R.drawable.ic_lock, Palette.INDIGO, enabled = m.isOwner) { act { m.dpm.lockNow() } },
-                Tile("Reboot", R.drawable.ic_restart, Palette.INDIGO, enabled = m.isOwner) {
+                Tile("Lock now", R.drawable.ic_lock, Palette.INDIGO, enabled = owner) { act { m.dpm.lockNow() } },
+                Tile("Reboot", R.drawable.ic_restart, Palette.INDIGO, enabled = owner) {
                     confirm("Reboot?", "The phone will restart now.", "Reboot") { act { m.dpm.reboot(m.admin) } }
                 },
                 Tile("Lock panel", R.drawable.ic_exit, Palette.SLATE) { Session.lock(); render() },
@@ -207,8 +210,22 @@ class MainActivity : AppCompatActivity() {
                 "All restrictions, hidden/paused apps, website blocking and kiosk mode are removed, " +
                     "and this app stops being Device Owner. You'd need to factory reset to make it owner again.",
                 "Release",
-            ) { act { m.releaseAll(this); toast("Device Owner removed"); render() } }
+            ) { release(m) }
         } else wipe(m)
+    }
+
+    /** Release all runs in the background (P-01): it checks every package and would freeze the screen for seconds. */
+    private fun release(m: Mdm) {
+        act { Kiosk.stop(this) } // lock task can only be ended from the main thread
+        val wait = MaterialAlertDialogBuilder(this).setTitle("Releasing all controls…")
+            .setMessage("Undoing every policy and checking all apps. This can take a few seconds. Don't close DeviceGuard.")
+            .setCancelable(false).show()
+        inBackground({ runCatching { m.releaseAll() } }) { r ->
+            wait.dismiss()
+            r.onSuccess { toast("Device Owner removed") }
+                .onFailure { toast("Release stopped: ${it.message ?: it.javaClass.simpleName}. Tap Release again.") }
+            render()
+        }
     }
 
     private fun wipe(m: Mdm) {

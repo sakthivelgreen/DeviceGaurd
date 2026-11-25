@@ -680,10 +680,13 @@ All screens are built in code with these helpers. They keep the look consistent 
 | `button(label, outlined)` / `materialButton()` | Material buttons |
 | `confirm()`, `askPin()`, `pinField()`, `padded()` | Dialogs and inputs |
 | `act { }` | Runs code and shows any exception as a toast instead of crashing |
+| `inBackground(work) { result -> }` | Runs slow work (many system calls, files) off the main thread, then hands the result back on the main thread only if the screen is still open; errors become a toast |
 | `Palette` | Brand colours: BLUE, GREEN, PURPLE, ORANGE, TEAL, PINK, INDIGO, SLATE, RED |
 | `BaseActivity` | Sends you back to the PIN screen if the session expired; extends the session on touch |
 
 **Pattern for a screen:** `onResume()` → `render()` → `scrollPage { … }`. After any change, call `render()` again; scroll position and insets are preserved automatically.
+
+**Keep system calls off the main thread.** Every `Mdm` / `DevicePolicyManager` / `PackageManager` question is a call into Android's system process. In `render()`, read each value once (`val owner = m.isOwner`, `val rs = m.restrictions()`), never per row or per switch. Anything that loops over installed apps goes through `inBackground` (Apps list status, export, release).
 
 ---
 
@@ -767,6 +770,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | **Scroll jumping to the top** | Re-rendering builds a new ScrollView. `scrollPage()` copies the old `scrollY` and blocks auto-focus on text fields. The Apps RecyclerView updates only the changed row. |
 | **Private DNS vs VPN filter** | A forced Private DNS host sends DNS-over-TLS straight to that host, bypassing the VPN, so the app keeps them mutually exclusive. |
 | **`setGlobalPrivateDnsModeSpecifiedHost` blocks** | It tests the host over the network, so it's called on a background thread. |
+| **System calls are slow on the main thread** | Each DPM/PackageManager call crosses into the system process. The dashboard, Restrictions page and Apps rows read each value once per render; loops over all ~400 packages (Apps status, export, release) run in `inBackground` (P-01). |
 | **Implicit broadcasts** | `PACKAGE_ADDED` can't be received by a manifest receiver, so `GuardService` (foreground, `specialUse`) registers it at runtime. |
 | **"Unaffiliated users" error (Private DNS filter)** | Phone-wide policies such as Private DNS need **every user to be affiliated** with the Device Owner. Private Space can never be affiliated (Android doesn't allow an admin inside it), so the app can't set Private DNS while it exists. **Workarounds that keep Private Space:** (1) set Private DNS **from the PC** (see *Websites → Private Space on the phone* in §7), whole phone; (2) VPN filter + Family-safe upstream, main profile only; (3) Chrome rules. Check users with `adb shell pm list users`. |
 | **vivo ignores "Lock Private DNS"** | The restriction is applied (`dumpsys device_policy` shows `disallow_config_private_dns = true`), but vivo's custom Private DNS screen doesn't check it. Fix: `WRITE_SECURE_SETTINGS` granted over ADB. `GuardService` watches `private_dns_mode`/`private_dns_specifier` with a `ContentObserver` and restores the chosen host (`PrivateDns.enforce`). |
@@ -852,5 +856,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-24 | **B-02 fixed (Holds):** features no longer undo each other's pauses/hides. Each feature has its own list; an app is released only when no feature wants it (e.g. a schedule ending no longer un-pauses an app you paused by hand). Apps/Bloatware tell you who still holds an app. One-time migration recorded existing hides (39 on this phone) as manual. Profile export/import now saves only your own pauses/hides.
 | 2026-11-24 | **Group 2 fixes:** B-05 automatic date & time kept on while screen time is in use (policy + direct write + instant revert); S-04 PIN 6–12 digits, PBKDF2 hashes (old hashes upgrade on next unlock), stored growing lockout shared by PIN, recovery and two-factor codes, session on the boot clock; B-06 uninstall/update failures now show a notification (`InstallResultReceiver`); B-08 locked read-modify-write for saved lists and screen-time data; D-01 one notification helper (`Notify.kt`); D-04 one unlock flow and credential reset; R-01/R-02 dead office-DNS/DoH code and unused helpers removed.
 | 2026-11-25 | **S-03:** NextDNS API key, GitHub token and two-factor secret are encrypted with an Android Keystore key (`Secrets.kt`); existing plain-text values were encrypted automatically on update. Two-factor check now fails closed if its secret can't be read (recovery code / PC reset still work).
+| 2026-11-25 | **P-01:** system calls moved off the main thread. Dashboard ~70 → ~4 calls per open (baseline writes in the background); Restrictions page reads all restrictions once (~100 → ~3 per redraw); Apps rows make no system calls while scrolling (status read in the background); export and Danger zone → Release run in the background, Release behind a dialog that can't be dismissed, with a `releasing` guard so nothing re-hides apps meanwhile. New `inBackground` helper in `Ui.kt`. |
 
 © Sakthivel J

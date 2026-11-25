@@ -214,6 +214,7 @@ class GuardService : Service() {
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
             val pkg = i.data?.schemeSpecificPart ?: return
+            if (Mdm.releasing) return // Release all is unhiding apps: don't re-hide or uninstall them
             if (AppControl.isIgnored(pkg)) return // unhide after a force stop, not a real install
             if (Blocklist.onInstalled(c, pkg)) return
             if (ChromePolicy.onInstalled(c, pkg)) return

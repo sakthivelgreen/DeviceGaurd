@@ -17,9 +17,14 @@ import java.util.Locale
 class SettingsActivity : BaseActivity() {
 
     private val exportLauncher = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
-        if (uri != null) act {
-            contentResolver.openOutputStream(uri)?.use { it.write(Profile.export(this).toByteArray()) }
-            toast("Profile saved")
+        if (uri != null) {
+            toast("Saving profile…")
+            // Export checks every package and writes a file: off the main thread (P-01).
+            inBackground({
+                val json = Profile.export(this)
+                val out = contentResolver.openOutputStream(uri) ?: error("Couldn't open the file")
+                out.use { it.write(json.toByteArray()) }
+            }) { toast("Profile saved") }
         }
     }
 

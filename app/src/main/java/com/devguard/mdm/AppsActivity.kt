@@ -23,8 +23,12 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 class AppsActivity : BaseActivity() {
     data class AppItem(val pkg: String, val label: String, val system: Boolean, val info: ApplicationInfo)
 
+    /** A row's system state, read off the main thread (P-01) so scrolling makes no system calls. */
+    private data class Status(val hidden: Boolean, val suspended: Boolean, val noUninstall: Boolean, val stopped: Boolean)
+
     private lateinit var m: Mdm
     private var all: List<AppItem> = emptyList()
+    private var status: Map<String, Status> = emptyMap()
     private var shown: List<AppItem> = emptyList()
     private var showSystem = false
     private var query = ""
@@ -66,17 +70,37 @@ class AppsActivity : BaseActivity() {
 
     override fun onResume() {
         super.onResume()
-        if (!isFinishing) { renderHeader(); adapter.notifyDataSetChanged() }
+        if (isFinishing) return
+        renderHeader()
+        // Other screens (Blocked apps, Screen time, Bloatware) may have hidden or paused apps meanwhile.
+        if (all.isNotEmpty()) refreshStatus() // the first time, load() reads the status
     }
 
-    private fun load() = Thread {
+    private fun load() = inBackground({
         val pm = packageManager
         val list = pm.getInstalledApplications(PackageManager.MATCH_UNINSTALLED_PACKAGES or PackageManager.MATCH_DISABLED_COMPONENTS)
             .filter { it.packageName != packageName && (it.flags and ApplicationInfo.FLAG_INSTALLED) != 0 }
             .map { AppItem(it.packageName, pm.getApplicationLabel(it).toString(), (it.flags and ApplicationInfo.FLAG_SYSTEM) != 0, it) }
             .sortedBy { it.label.lowercase() }
-        runOnUiThread { all = list; filter() }
-    }.start()
+        list to list.associate { it.pkg to readStatus(it.pkg) }
+    }) { (list, st) -> all = list; status = st; filter() }
+
+    /** Re-reads every app's status in the background, then redraws the rows. */
+    private fun refreshStatus() {
+        val items = all
+        inBackground({ items.associate { it.pkg to readStatus(it.pkg) } }) { status = it; adapter.notifyDataSetChanged() }
+    }
+
+    /** 4 system calls: fine for one app on a tap, never per row while scrolling. */
+    private fun readStatus(pkg: String) =
+        Status(m.isHidden(pkg), m.isSuspended(pkg), m.isUninstallBlocked(pkg), AppControl.isStopped(this, pkg))
+
+    /** After changing one app: re-read only its status and redraw only its row (the list stays where it is). */
+    private fun updated(pkg: String) {
+        status = status + (pkg to readStatus(pkg))
+        val i = shown.indexOfFirst { it.pkg == pkg }
+        if (i >= 0) adapter.notifyItemChanged(i + 1) else adapter.notifyDataSetChanged()
+    }
 
     private fun filter() {
         shown = all.filter {
@@ -89,7 +113,8 @@ class AppsActivity : BaseActivity() {
     private fun renderHeader() {
         dyn.removeAllViews()
         dyn.pageHeader(this, "Apps", "Play Store, installs and per-app control", back = true)
-        if (!m.isOwner) dyn.card { text("⚠️ Device Owner required for these controls", 13f, bold = true, color = Palette.ORANGE) }
+        val owner = m.isOwner
+        if (!owner) dyn.card { text("⚠️ Device Owner required for these controls", 13f, bold = true, color = Palette.ORANGE) }
 
         val current = when {
             m.isHidden(Mdm.PLAY_STORE) -> "Hide"
@@ -106,7 +131,7 @@ class AppsActivity : BaseActivity() {
                 label, icon,
                 color = if (label == current) color else withAlpha(color, 0x80),
                 sub = if (label == current) "● Current" else null,
-                enabled = m.isOwner,
+                enabled = owner,
             ) { setPlayStore(label) }
         })
 
@@ -114,14 +139,14 @@ class AppsActivity : BaseActivity() {
         switchRow(
             "Approved apps only",
             "New installs are paused until you approve them here. Apps installed while this panel is unlocked are approved automatically.",
-            Prefs.approvalMode(this@AppsActivity), m.isOwner,
+            Prefs.approvalMode(this@AppsActivity), owner,
         ) { _, on ->
             if (on) Approval.enable(this@AppsActivity) else Approval.disable(this@AppsActivity)
-            adapter.notifyDataSetChanged(); true
+            refreshStatus(); true // turning it off un-pauses apps
         }
         switchRow(
             "Block all installs", "Nothing can be installed, not even from Play Store",
-            m.hasRestriction(UserManager.DISALLOW_INSTALL_APPS), m.isOwner,
+            m.hasRestriction(UserManager.DISALLOW_INSTALL_APPS), owner,
         ) { _, on -> m.setRestriction(UserManager.DISALLOW_INSTALL_APPS, on); true }
         }
 
@@ -143,24 +168,26 @@ class AppsActivity : BaseActivity() {
                                 "Hide it instead? The icon disappears and it can't be opened. App updates also stop while it's hidden.\n\n" +
                                 "To block only certain apps, use Blocked apps on the dashboard.",
                             "Hide Play Store",
-                        ) { act { Holds.set(this, Hold.HIDE_MANUAL, p, true) }; renderHeader() }
+                        ) { act { Holds.set(this, Hold.HIDE_MANUAL, p, true) }; renderHeader(); updated(p) }
                     }
                 }
                 "Hide" -> { Holds.set(this, Hold.SUSPEND_MANUAL, p, false); if (!Holds.set(this, Hold.HIDE_MANUAL, p, true)) toast("Could not hide Play Store") }
             }
         }
         renderHeader()
-        adapter.notifyDataSetChanged()
+        updated(Mdm.PLAY_STORE)
     }
 
+    /** Row tags: system state from the saved [status] (no system calls), the rest from preferences. */
     private fun statusOf(a: AppItem): String {
         val tags = mutableListOf<String>()
-        if (m.isHidden(a.pkg)) tags += "HIDDEN"
-        if (m.isSuspended(a.pkg)) tags += "SUSPENDED"
-        if (m.isUninstallBlocked(a.pkg)) tags += "NO-UNINSTALL"
+        val s = status[a.pkg]
+        if (s?.hidden == true) tags += "HIDDEN"
+        if (s?.suspended == true) tags += "SUSPENDED"
+        if (s?.noUninstall == true) tags += "NO-UNINSTALL"
         if (a.pkg in Prefs.kioskPkgs(this)) tags += "KIOSK"
         if (a.pkg in Prefs.noBackgroundPkgs(this)) tags += "NO-BG"
-        if (AppControl.isStopped(this, a.pkg)) tags += "STOPPED"
+        if (s?.stopped == true) tags += "STOPPED"
         if (Prefs.approvalMode(this) && a.pkg !in Prefs.approved(this)) tags += "UNAPPROVED"
         if (a.system) tags += "system"
         return tags.joinToString(" · ")
@@ -203,14 +230,10 @@ class AppsActivity : BaseActivity() {
                     i == 1 -> permissions(a)
                     i == 0 -> {
                         AppControl.protectedReason(this, a.pkg)?.let { toast(it); return@setItems }
-                        Thread {
-                            val err = AppControl.forceStop(this, a.pkg)
-                            runOnUiThread {
-                                toast(err ?: "${a.label} stopped")
-                                val idx = shown.indexOf(a)
-                                if (idx >= 0) adapter.notifyItemChanged(idx + 1)
-                            }
-                        }.start()
+                        inBackground({ AppControl.forceStop(this, a.pkg) }) { err ->
+                            toast(err ?: "${a.label} stopped")
+                            updated(a.pkg)
+                        }
                     }
                     a.system -> startActivity(android.content.Intent(this, BloatActivity::class.java))
                     else -> confirm("Uninstall ${a.label}?", "The app and its data are removed from the phone.", "Uninstall") { uninstall(a) }
@@ -265,9 +288,7 @@ class AppsActivity : BaseActivity() {
                 if (reason != null) toast(reason) else AppControl.setNoBackground(this, a.pkg, next[5])
             }
         }
-        // Refresh only this row so the list stays where it is.
-        val i = shown.indexOf(a)
-        if (i >= 0) adapter.notifyItemChanged(i + 1) else adapter.notifyDataSetChanged()
+        updated(a.pkg)
     }
 
     private fun iconOf(a: AppItem): Drawable =
