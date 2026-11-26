@@ -318,6 +318,7 @@ class SearchBlockService : AccessibilityService() {
         return false
     }
 
+    @Suppress("UNUSED_PARAMETER")
     private fun block(keyword: String, pkg: String) {
         lastBlock = SystemClock.elapsedRealtime()
         performGlobalAction(GLOBAL_ACTION_BACK)
@@ -325,8 +326,9 @@ class SearchBlockService : AccessibilityService() {
         bg.postDelayed({ if (runCatching { findHit(pkg) }.getOrNull() != null) performGlobalAction(GLOBAL_ACTION_BACK) }, 500)
         bg.postDelayed({ if (runCatching { findHit(pkg) }.getOrNull() != null) performGlobalAction(GLOBAL_ACTION_HOME) }, 1100)
         Notify.post(
+            // The keyword itself isn't shown: the list is private (hidden behind the PIN in DeviceGuard).
             this, Channel.BLOCKED, SearchBlocker.NOTIFY_ID, "Search blocked",
-            "\"${keyword.removeSuffix("*")}\" is a blocked keyword (${Apps.label(this, pkg)}).",
+            "It contains a blocked keyword (${Apps.label(this, pkg)}).",
         )
     }
 

@@ -13,6 +13,14 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
  */
 class WebActivity : BaseActivity() {
 
+    /** The search keyword list is hidden until the admin PIN is entered again; hidden again when leaving the screen. */
+    private var showKeywords = false
+
+    override fun onStop() {
+        super.onStop()
+        showKeywords = false
+    }
+
     override fun onResume() {
         super.onResume()
         if (!isFinishing) render()
@@ -279,8 +287,14 @@ class WebActivity : BaseActivity() {
                     render()
                 }.isEnabled = owner
                 if (kws.isEmpty()) text("No keywords blocked yet.", 13f).alpha = 0.6f
-                else text("Blocked keywords (${kws.size}): tap one to remove", 13f, bold = true)
-                kws.forEach { k ->
+                else if (!showKeywords) {
+                    text("Blocked keywords: ${kws.size} (hidden)", 13f, bold = true)
+                    button("Show keywords (PIN)", outlined = true) { askPin { showKeywords = true; render() } }
+                } else {
+                    text("Blocked keywords (${kws.size}): tap one to remove", 13f, bold = true)
+                    button("Hide keywords", outlined = true) { showKeywords = false; render() }
+                }
+                if (showKeywords) kws.forEach { k ->
                     text("🔎  $k", 16f).setOnClickListener {
                         Guard.require(this@WebActivity, "remove the search keyword \"$k\"") {
                             confirm("Remove \"$k\"?", "Searches containing it won't be blocked any more.", "Remove") {
