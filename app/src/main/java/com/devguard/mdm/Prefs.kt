@@ -58,7 +58,7 @@ object Prefs {
      * another phone. Profile.export also skips any encrypted value ("enc1:"), as a safety net for secrets added later.
      */
     val NOT_EXPORTED: Set<String> by lazy {
-        credKeys(PIN).toSet() + credKeys(REC) + Secrets.KEYS + NEXTDNS_ID + TOTP_LAST_STEP + Session.STATE_KEYS +
+        credKeys(PIN).toSet() + credKeys(REC) + Secrets.KEYS + NEXTDNS_ID + "policyBrowsers" + TOTP_LAST_STEP + Session.STATE_KEYS +
             // runtime / device state
             setOf(GUARD_WAIT_START, GUARD_WAIT_WHAT, BG_LAST_RUN, BG_LAST_COUNT, DNS_FALLBACK, UPD_LAST, K_DNS_BLOCKED_NETS,
                 ST_TEMP_ALLOW, K_KIOSK_ON, Holds.MIGRATED) +

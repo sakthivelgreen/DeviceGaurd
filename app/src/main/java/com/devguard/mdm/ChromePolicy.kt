@@ -7,7 +7,12 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Bundle
 
-/** Website rules enforced inside Chrome through its managed (enterprise) policies. No VPN needed. */
+/**
+ * Website rules enforced through browsers' managed (enterprise) policies, written as Device Owner. Like a PC policy,
+ * but on Android a browser only obeys it if it reads Android managed configurations: the profile goes to Chrome and to
+ * every installed browser that declares the Chromium policies ([policyBrowsers]); each gets only the keys it declares.
+ * Browsers that ignore policies are covered by the keyword blocker, or hidden with "Allow only Chrome".
+ */
 object ChromePolicy {
     const val CHROME = "com.android.chrome"
     /** Chrome ignores URLBlocklist entries beyond 1000. */
@@ -15,7 +20,29 @@ object ChromePolicy {
 
     fun installed(c: Context) = runCatching { c.packageManager.getApplicationInfo(CHROME, PackageManager.MATCH_UNINSTALLED_PACKAGES) }.isSuccess
 
-    /** Pushes the current settings to Chrome. Returns null on success or an error message. */
+    /**
+     * Installed browsers that accept the Chromium policy profile (they declare "URLBlocklist" as a managed
+     * configuration), with the policy keys each declares. Chrome is always included.
+     */
+    fun policyBrowsers(c: Context): Map<String, Set<String>> {
+        val rm = c.getSystemService(android.content.RestrictionsManager::class.java)
+        val out = LinkedHashMap<String, Set<String>>()
+        for (p in listOf(CHROME) + SearchBlocker.browserPackages(c).sorted()) {
+            val keys = runCatching { rm.getManifestRestrictions(p) }.getOrNull()?.map { it.key }?.toSet().orEmpty()
+            if (p == CHROME && installed(c)) out[p] = keys.ifEmpty { ALL_KEYS }
+            else if ("URLBlocklist" in keys) out[p] = keys
+        }
+        return out
+    }
+
+    private val ALL_KEYS = setOf("URLBlocklist", "SafeSitesFilterBehavior", "ForceGoogleSafeSearch", "ForceYouTubeRestrict",
+        "IncognitoModeAvailability", "DnsOverHttpsMode")
+    private const val K_TARGETS = "policyBrowsers" // browsers the profile was last written to (to clear dropped ones)
+
+    /** Browsers that got the profile on the last [apply] (for the Websites screen). */
+    fun lastTargets(c: Context): Set<String> = Prefs.getSet(c, K_TARGETS)
+
+    /** Pushes the current settings to every policy browser. Returns null on success or an error message. */
     fun apply(c: Context): String? {
         val m = Mdm(c)
         if (!m.isOwner) return "Device Owner required"
@@ -35,13 +62,22 @@ object ChromePolicy {
             if (Prefs.getFlag(c, Prefs.CHROME_NO_INCOGNITO)) b.putInt("IncognitoModeAvailability", 1)
             b.putString("DnsOverHttpsMode", "off") // keep Chrome on system DNS so Private DNS filtering applies
         }
-        m.dpm.setApplicationRestrictions(m.admin, CHROME, b)
+        val targets = policyBrowsers(c)
+        for ((pkg, keys) in targets) {
+            val own = Bundle(b).apply { keySet().toList().forEach { if (it !in keys) remove(it) } } // only what it declares
+            runCatching { m.dpm.setApplicationRestrictions(m.admin, pkg, own) }
+        }
+        // A browser that no longer qualifies (or was uninstalled) loses the old profile.
+        (lastTargets(c) - targets.keys).forEach { runCatching { m.dpm.setApplicationRestrictions(m.admin, it, Bundle()) } }
+        Prefs.setSet(c, K_TARGETS, targets.keys)
         return null
     }
 
     fun clear(c: Context) {
         val m = Mdm(c)
-        if (m.isOwner) runCatching { m.dpm.setApplicationRestrictions(m.admin, CHROME, Bundle()) }
+        if (!m.isOwner) return
+        (lastTargets(c) + CHROME).forEach { runCatching { m.dpm.setApplicationRestrictions(m.admin, it, Bundle()) } }
+        Prefs.setSet(c, K_TARGETS, emptySet())
     }
 
     /** Installed browsers other than Chrome (apps that open any web link). */

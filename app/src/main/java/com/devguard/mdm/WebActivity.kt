@@ -247,7 +247,8 @@ class WebActivity : BaseActivity() {
             // ---- Search keyword blocker (every browser) ----
             card("Search keyword blocker") {
                 text(
-                    "A web search, or an address typed in any browser, that contains one of these words is stopped: the browser goes back " +
+                    "A web search, an address typed in any browser, or a search in apps (YouTube, Play Store, Instagram, Facebook, " +
+                        "Telegram…) that contains one of these words is stopped: the app goes back " +
                         "and you get a notification. Whole words only (\"ass\" doesn't block \"class\"); end a word with * to also block " +
                         "longer words (porn* blocks pornography). Chrome also refuses searches that start with a keyword. " +
                         "Removing a keyword needs the filter guard.",
@@ -309,6 +310,16 @@ class WebActivity : BaseActivity() {
             // ---- 2. Chrome policies ----
             card("Chrome rules") {
             if (!ChromePolicy.installed(context)) text("Chrome isn't installed on this phone.", 13f, bold = true)
+            run {
+                val got = ChromePolicy.lastTargets(context)
+                val ignore = SearchBlocker.browserPackages(context).filter { it !in got && it != SearchBlocker.GOOGLE_APP }
+                if (got.isNotEmpty()) text("Policy profile installed in: " + got.joinToString { Apps.label(context, it) }, 13f, bold = true)
+                if (ignore.isNotEmpty()) text(
+                    "These browsers don't accept policies (Android lets each browser decide): " + ignore.joinToString { Apps.label(context, it) } +
+                        ". The search keyword blocker still covers them; Allow only Chrome hides them.",
+                    12f,
+                ).alpha = 0.7f
+            }
             text("Enforced inside Chrome through its enterprise policies. Restart Chrome after changes; check them at chrome://policy.", 13f).alpha = 0.8f
             val chromeOn = Prefs.getFlag(context, Prefs.CHROME_ON)
             switchRow("Enforce in Chrome", "Blocks your site list in Chrome", chromeOn, owner) { _, on ->

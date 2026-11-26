@@ -194,7 +194,8 @@ object SearchBlocker {
 
 /**
  * Reads browsers' address / search / title bars (not the page content) and leaves a search that contains a blocked
- * keyword. Other apps: only an in-app browser's address bar and typing inside web content.
+ * keyword. Other apps (YouTube, Play Store, Instagram, Facebook, Telegram, X…): their search boxes, found by id or by
+ * a "Search" hint, plus an in-app browser's address bar and typing inside web content. Chat boxes aren't read.
  * Window scans run on a background thread, at most one per [SCAN_GAP_MS], only for the window of the app that sent
  * the event, and never act on DeviceGuard itself, the keyboard or System UI.
  */
@@ -204,10 +205,23 @@ class SearchBlockService : AccessibilityService() {
             private set
 
         private val BROWSER_HINTS = listOf("url", "search", "query", "omnibox", "address", "location", "title")
-        private val INAPP_HINTS = listOf("url", "address", "omnibox")
+        /** Other apps (YouTube, Play Store, Instagram, Facebook, Telegram…): search boxes and in-app browser address bars. */
+        private val APP_HINTS = listOf("search", "query", "url", "address", "omnibox")
         private const val MAX_NODES = 300
         private const val SCAN_GAP_MS = 400L
         private const val SYSTEM_UI = "com.android.systemui"
+        /**
+         * Apps whose search results screen shows the search as plain text in the top bar (no id, no hint; e.g. Play
+         * Store's Compose UI). For these, text in the top bar of the screen is read too.
+         */
+        private val SEARCH_APPS = setOf(
+            "com.google.android.youtube", "com.android.vending", "com.instagram.android", "com.facebook.katana",
+            "com.facebook.lite", "org.telegram.messenger", "app.nicegram", "org.thunderdog.challegram", "com.twitter.android",
+            "com.reddit.frontpage", "com.zhiliaoapp.musically", "com.ss.android.ugc.trill", "com.pinterest",
+            "com.snapchat.android", "com.google.android.apps.youtube.music",
+        )
+        private const val TOP_BAR_FRACTION = 0.22
+        private const val TYPE_PAUSE_MS = 1500L
     }
 
     private val worker = HandlerThread("search-block").apply { start() }
@@ -217,6 +231,14 @@ class SearchBlockService : AccessibilityService() {
     @Volatile private var lastBlock = 0L
     @Volatile private var lastScan = 0L
     @Volatile private var scanPkg: String? = null
+    /** Last keystroke in a search box: a word counts as finished 1.5 s after typing stops (apps with live results). */
+    @Volatile private var lastTypeAt = 0L
+    @Volatile private var lastTypePkg: String? = null
+    @Volatile private var lastTypeText: String? = null
+    @Volatile private var lastTypeField: AccessibilityNodeInfo? = null
+
+    /** A keyword found on screen; [field] is the editable box holding it (cleared instead of leaving the app). */
+    private class Hit(val keyword: String, val field: AccessibilityNodeInfo?)
 
     override fun onServiceConnected() {
         instance = this
@@ -249,19 +271,40 @@ class SearchBlockService : AccessibilityService() {
         val browser = pkg in browsers
         when (e.eventType) {
             AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED -> {
-                // Typing: in a browser anywhere, elsewhere only inside web content (an in-app browser page).
-                if (!browser && !insideWebContent(e.source)) return
-                val hit = e.text.firstNotNullOfOrNull { SearchBlocker.match(it.toString(), kws, editing = true) } ?: return
-                block(hit, pkg)
+                // Typing: in a browser anywhere; elsewhere in a search box or inside web content (in-app browser page).
+                val src = e.source
+                if (!browser && !isSearchField(src) && !insideWebContent(src)) return
+                if (src?.isShowingHintText == true) return // only the grey placeholder (e.g. a trending search)
+                val typed = e.text.joinToString(" ") { it.toString() }
+                if (typed.isBlank() || typed == src?.hintText?.toString()) return
+                SearchBlocker.match(typed, kws, editing = true)?.let { block(Hit(it, src?.takeIf { s -> s.isEditable }), pkg); return }
+                // The last word may be unfinished: check it as finished once typing pauses (live-results apps).
+                lastTypeAt = SystemClock.elapsedRealtime(); lastTypePkg = pkg; lastTypeText = typed; lastTypeField = src
+                bg.removeCallbacks(pauseCheck)
+                bg.postDelayed(pauseCheck, TYPE_PAUSE_MS)
             }
             AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED -> {
                 val types = e.contentChangeTypes
                 val relevant = types == 0 || types and (AccessibilityEvent.CONTENT_CHANGE_TYPE_TEXT or AccessibilityEvent.CONTENT_CHANGE_TYPE_SUBTREE) != 0
                 if (relevant) requestScan(pkg)
             }
-            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> requestScan(pkg)
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> {
+                // Left the search box quickly (tapped a result): the typed text counts as finished.
+                if (pkg == lastTypePkg && SystemClock.elapsedRealtime() - lastTypeAt < 5000) bg.post(pauseCheck)
+                requestScan(pkg)
+            }
         }
     }
+
+    private val pauseCheck = Runnable {
+        val pkg = lastTypePkg ?: return@Runnable
+        val text = lastTypeText ?: return@Runnable
+        lastTypePkg = null
+        SearchBlocker.match(text, SearchBlocker.keywords(this), editing = false)?.let { block(Hit(it, lastTypeField?.takeIf { f -> f.isEditable }), pkg) }
+    }
+
+    /** Still typing (a keystroke in the last 1.5 s): the last word may be unfinished. */
+    private fun typingNow() = SystemClock.elapsedRealtime() - lastTypeAt < TYPE_PAUSE_MS
 
     /** At most one scan per [SCAN_GAP_MS]; a later request in the gap runs once at its end (trailing scan). */
     private fun requestScan(pkg: String) {
@@ -279,28 +322,72 @@ class SearchBlockService : AccessibilityService() {
     }
 
     /** The keyword in [pkg]'s focused window, or null. Never reads a window of another app. */
-    private fun findHit(pkg: String): String? {
+    private fun findHit(pkg: String): Hit? {
         val kws = SearchBlocker.keywords(this)
         if (kws.isEmpty()) return null
         val root = rootInActiveWindow ?: return null
         val rp = root.packageName?.toString() ?: return null
         if (rp != pkg || rp in ignored) return null
-        val hints = if (rp in browsers) BROWSER_HINTS else INAPP_HINTS
         val browser = rp in browsers
+        val hints = if (browser) BROWSER_HINTS else APP_HINTS
+        val topBar = if (rp in SEARCH_APPS) (resources.displayMetrics.heightPixels * TOP_BAR_FRACTION).toInt() else 0
+        val r = android.graphics.Rect()
+        if (!browser) {
+            // Typing in an app's search box: check only that box (not the suggestion / history rows around it).
+            val focus = runCatching { root.findFocus(AccessibilityNodeInfo.FOCUS_INPUT) }.getOrNull()
+            if (focus != null && focus.isEditable) {
+                val t = typedText(focus) ?: return null
+                return if (isSearchField(focus)) SearchBlocker.match(t, kws, editing = typingNow())?.let { Hit(it, focus) } else null
+            }
+        }
         // Breadth-first so the toolbar is reached first; page content (WebView) is not entered.
         val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
         var seen = 0
         while (queue.isNotEmpty() && seen < MAX_NODES) {
             val n = queue.removeFirst(); seen++
             val id = n.viewIdResourceName?.substringAfter('/')?.lowercase().orEmpty()
-            val field = hints.any { it in id } || (browser && n.isEditable)
-            if (field) n.text?.toString()?.let { t ->
-                SearchBlocker.match(t, kws, editing = n.isEditable && n.isFocused)?.let { return it }
+            val inTopBar = topBar > 0 && n.text != null && run { n.getBoundsInScreen(r); r.height() > 0 && r.bottom <= topBar }
+            val idHit = hints.any { it in id }
+            val field = if (browser) idHit || n.isEditable || hintSaysSearch(n)
+            // Apps: the search box / the query in the top bar, never suggestion, history or result rows.
+            else (idHit || hintSaysSearch(n) || inTopBar) && !isInList(n)
+            if (field) typedText(n)?.let { t ->
+                SearchBlocker.match(t, kws, editing = n.isEditable && n.isFocused && typingNow())?.let { return Hit(it, n.takeIf { n.isEditable }) }
             }
             if (isWebContent(n)) continue
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
         return null
+    }
+
+    /** The node's real text, or null if it's empty or only its placeholder (hint) is showing. */
+    private fun typedText(n: AccessibilityNodeInfo): String? {
+        val t = n.text?.toString()?.takeIf { it.isNotBlank() } ?: return null
+        if (n.isShowingHintText || t == n.hintText?.toString()) return null
+        return t
+    }
+
+    /** Inside a list or grid (suggestions, history, results): walks up a few parents. */
+    private fun isInList(n: AccessibilityNodeInfo): Boolean {
+        var p: AccessibilityNodeInfo? = n
+        var depth = 0
+        while (p != null && depth++ < 6) {
+            if (p.collectionItemInfo != null || p.collectionInfo != null) return true
+            val cls = p.className?.toString().orEmpty()
+            if (cls.endsWith("RecyclerView") || cls.endsWith("ListView") || cls.endsWith("GridView")) return true
+            p = p.parent
+        }
+        return false
+    }
+
+    /** A search box without a helpful id (Telegram, Play Store, Compose apps): its hint text says "Search". */
+    private fun hintSaysSearch(n: AccessibilityNodeInfo): Boolean =
+        n.hintText?.toString()?.lowercase()?.contains("search") == true
+
+    private fun isSearchField(n: AccessibilityNodeInfo?): Boolean {
+        if (n == null) return false
+        val id = n.viewIdResourceName?.substringAfter('/')?.lowercase().orEmpty()
+        return "search" in id || "query" in id || hintSaysSearch(n)
     }
 
     private fun isWebContent(n: AccessibilityNodeInfo): Boolean {
@@ -318,19 +405,39 @@ class SearchBlockService : AccessibilityService() {
         return false
     }
 
-    @Suppress("UNUSED_PARAMETER")
-    private fun block(keyword: String, pkg: String) {
+    /**
+     * Stops the search. The search box holding the keyword is cleared (the app stays open, so reopening it doesn't
+     * show the keyword again and close again); a results page is left with Back. Checked again after 0.6 s and 1.3 s:
+     * a box that still holds it is cleared, otherwise Back, and Home only as the last step.
+     */
+    private fun block(hit: Hit, pkg: String) {
         lastBlock = SystemClock.elapsedRealtime()
-        performGlobalAction(GLOBAL_ACTION_BACK)
-        // Still showing it (nothing to go back to, or Back only closed the keyboard)? Back again, then Home.
-        bg.postDelayed({ if (runCatching { findHit(pkg) }.getOrNull() != null) performGlobalAction(GLOBAL_ACTION_BACK) }, 500)
-        bg.postDelayed({ if (runCatching { findHit(pkg) }.getOrNull() != null) performGlobalAction(GLOBAL_ACTION_HOME) }, 1100)
+        val cleared = hit.field != null && clear(hit.field)
+        if (!cleared) performGlobalAction(GLOBAL_ACTION_BACK)
+        bg.postDelayed({ followUp(pkg, last = false) }, 600)
+        bg.postDelayed({ followUp(pkg, last = true) }, 1300)
         Notify.post(
             // The keyword itself isn't shown: the list is private (hidden behind the PIN in DeviceGuard).
             this, Channel.BLOCKED, SearchBlocker.NOTIFY_ID, "Search blocked",
-            "It contains a blocked keyword (${Apps.label(this, pkg)}).",
+            (if (cleared) "The search was cleared: it contains a blocked keyword" else "It contains a blocked keyword") +
+                " (${Apps.label(this, pkg)}).",
         )
     }
+
+    private fun followUp(pkg: String, last: Boolean) {
+        val h = runCatching { findHit(pkg) }.getOrNull() ?: return
+        if (h.field != null && clear(h.field)) return
+        performGlobalAction(if (last) GLOBAL_ACTION_HOME else GLOBAL_ACTION_BACK)
+    }
+
+    /** Erases the text of an editable box. False if the app refused (then Back is used instead). */
+    private fun clear(field: AccessibilityNodeInfo): Boolean = runCatching {
+        field.refresh()
+        val args = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "")
+        }
+        field.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)
+    }.getOrDefault(false)
 
     override fun onInterrupt() {}
 

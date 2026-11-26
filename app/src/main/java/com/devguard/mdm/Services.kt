@@ -34,6 +34,7 @@ class GuardService : Service() {
             if (AppControl.isIgnored(pkg)) return // unhide after a force stop, not a real install
             SearchBlockService.instance?.configure() // a new browser is watched by the keyword blocker at once
             if (Blocklist.onInstalled(c, pkg)) return
+            if (pkg == ChromePolicy.CHROME || ChromePolicy.isBrowser(c, pkg)) runCatching { ChromePolicy.apply(c) } // new browser gets the policy profile
             if (ChromePolicy.onInstalled(c, pkg)) return
             if (i.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
             Approval.onInstalled(c, pkg)
