@@ -120,6 +120,7 @@ object Prefs {
 
     // Keys of the string sets changed with updateSet.
     const val K_DOMAINS = "domains"
+    const val K_SEARCH_KEYWORDS = "searchKeywords" // SearchBlocker (normalized; trailing * = word start)
     const val K_WIFI_ALLOW = "wifiAllow"
     const val K_NO_BG = "noBackgroundPkgs"
     const val K_DNS_BLOCKED_NETS = "dnsBlockedNets"

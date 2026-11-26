@@ -17,7 +17,7 @@ class GuardService : Service() {
         fun needed(c: Context) = Prefs.approvalMode(c) || Prefs.blockedPkgs(c).isNotEmpty() ||
             Prefs.getFlag(c, Prefs.CHROME_ONLY) || SmartDns.enabled(c) || SmartDns.fallbackActive(c) ||
             Prefs.noBackgroundPkgs(c).isNotEmpty() || ScreenTime.needed(c) || Prefs.getFlag(c, Prefs.UPD_AUTO) ||
-            (Prefs.privateDnsHost(c) != null && PrivateDns.canWrite(c))
+            (Prefs.privateDnsHost(c) != null && PrivateDns.canWrite(c)) || SearchBlocker.active(c)
         fun start(c: Context) { c.startForegroundService(Intent(c, GuardService::class.java)) }
         /** Start or stop the watcher depending on current settings. */
         fun refresh(c: Context) {
@@ -29,8 +29,10 @@ class GuardService : Service() {
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
             val pkg = i.data?.schemeSpecificPart ?: return
+            if (i.action == Intent.ACTION_PACKAGE_CHANGED) { SearchBlockService.instance?.configure(); return } // re-enabled browser
             if (Mdm.releasing) return // Release all is unhiding apps: don't re-hide or uninstall them
             if (AppControl.isIgnored(pkg)) return // unhide after a force stop, not a real install
+            SearchBlockService.instance?.configure() // a new browser is watched by the keyword blocker at once
             if (Blocklist.onInstalled(c, pkg)) return
             if (ChromePolicy.onInstalled(c, pkg)) return
             if (i.getBooleanExtra(Intent.EXTRA_REPLACING, false)) return
@@ -45,7 +47,7 @@ class GuardService : Service() {
         val n = Notify.build(this, Channel.GUARD, "DeviceGuard MDM is active", "Enforcing device policies", ongoing = true)
         if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         else startForeground(1, n)
-        val f = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addDataScheme("package") }
+        val f = IntentFilter(Intent.ACTION_PACKAGE_ADDED).apply { addAction(Intent.ACTION_PACKAGE_CHANGED); addDataScheme("package") }
         if (Build.VERSION.SDK_INT >= 33) registerReceiver(receiver, f, RECEIVER_EXPORTED) else registerReceiver(receiver, f)
         runCatching { Holds.migrate(this) } // before screen time / approval act on pauses (B-02)
         work.execute { // a crash here used to kill the whole service (uncaught in a raw Thread)
@@ -63,6 +65,11 @@ class GuardService : Service() {
             contentResolver.registerContentObserver(android.provider.Settings.Global.getUriFor(key), false, timeObserver)
         }
         WebFilter.removeLegacyVpn(this) // R-03: clear an always-on VPN left by an older version
+        // Search keyword blocker: keep its accessibility service on; switch it back on if anyone turns it off.
+        for (key in listOf(android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, android.provider.Settings.Secure.ACCESSIBILITY_ENABLED)) {
+            contentResolver.registerContentObserver(android.provider.Settings.Secure.getUriFor(key), false, a11yObserver)
+        }
+        runCatching { SearchBlocker.ensureService(this) }
         PrivateDns.enforce(this)
 
         // Smart DNS: check every network the moment it connects or changes.
@@ -159,6 +166,14 @@ class GuardService : Service() {
         }
     }
 
+    private val a11yObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            if (runCatching { SearchBlocker.ensureService(this@GuardService) }.getOrDefault(false))
+                Notify.post(this@GuardService, Channel.BLOCKED, SearchBlocker.NOTIFY_ID + 1, "Search keyword blocker is back on",
+                    "It can't be turned off in Accessibility settings. Remove keywords in DeviceGuard → Websites (filter guard).")
+        }
+    }
+
     private val timeObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             work.execute {
@@ -184,6 +199,7 @@ class GuardService : Service() {
         runCatching { unregisterReceiver(receiver) }
         runCatching { contentResolver.unregisterContentObserver(dnsObserver) }
         runCatching { contentResolver.unregisterContentObserver(timeObserver) }
+        runCatching { contentResolver.unregisterContentObserver(a11yObserver) }
         runCatching { connectivity.unregisterNetworkCallback(netCallback) }
         runCatching { unregisterReceiver(wifiReceiver) }
         runCatching { unregisterReceiver(screenReceiver) }

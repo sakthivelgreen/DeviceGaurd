@@ -176,6 +176,7 @@ Security: the ADB reset only accepts the ADB shell (the receiver requires the `D
 | **Per-app control** | For any app: Hidden, Suspended, Block uninstall, Approved, Allowed in kiosk, plus silent **Uninstall** for user-installed apps. |
 | **Blocked apps** | "Always block" list from a Play Store link, a package name, the installed apps, or quick-add tiles. A blocked app is **silently uninstalled the moment it's installed**, with an "… is not allowed" notification. |
 | **Website blocking** | (1) **Family-safe filter**: forced and locked Private DNS (Cloudflare Family / Security, AdGuard Family, or a custom DNS-over-TLS host). (2) **Chrome rules**: your blocked-site list, adult filter, SafeSearch, YouTube restricted mode, no incognito, and hide other browsers. |
+| **Search keyword blocker** | A web search or address that contains a blocked keyword is stopped in **every browser** (and in-app browsers): the browser goes back and a notification says why. Whole words, or word starts with `*`. Chrome's own policy also refuses searches made of or starting with a keyword. Removing a keyword needs the filter guard. |
 | **Device restrictions** | Camera, screenshots, factory reset, safe mode, add users, accounts, app settings, developer options/ADB, installs/uninstalls, sideloading, Wi-Fi, mobile network, hotspot, Bluetooth, VPN, Private DNS, USB file transfer, SD card, date/time, location, calls, SMS. |
 | **Bloatware** | Every built-in app rated **Safe / Caution / Keep / Unknown** in 2×2 tabs. **Per-app on/off switch**, restore, and copyable ADB "remove completely" command. PC script `tools\debloat.ps1` for bulk list/disable/remove/restore with an undo log. |
 | **Background apps** | **Force stop** any app (Apps → app → Actions…, or Background apps → tap). **No background running** per app: listed apps are force-stopped ~10 s after the screen turns off. Optional Android **Restricted** mode over ADB (`tools\background.ps1`). |
@@ -524,6 +525,18 @@ Dashboard → **Settings**:
 - **Set up another phone (QR code):** the APK link is filled in with the newest GitHub release (`https://github.com/sakthivelgreen/DeviceGaurd/releases/latest/download/DeviceGuard.apk`); add Wi-Fi if needed, then *Show QR*. On the new phone: welcome screen → tap 6 times → scan. Android downloads DeviceGuard, checks its signature and makes it Device Owner. Then set the PIN and import your profile. The QR code carries this app's signing-key fingerprint, so only your APK is accepted.
 - **App updates:** repository (default `sakthivelgreen/DeviceGaurd`, public, so no token). The check uses github.com's `releases/latest` redirect, not GitHub's API (which allows only 60 calls an hour per network); only APKs signed with this app's key, newer than the installed version and matching the `build-<versionCode>` tag are installed. *Check for updates now*, or turn on *Check daily (auto-install)*. Updates install silently as Device Owner. Debug builds never install a release (the development phone keeps its ADB escape hatch).
 
+### Search keyword blocker
+Websites → **Search keyword blocker**: type one or more words (comma separated) → **Block these keywords**.
+
+- **What's blocked:** any web search, or address typed in any browser, that contains a keyword. The browser goes back (then Home if needed) and the notification "Search blocked: "…" is a blocked keyword" appears. Works in Chrome, Firefox, Edge, Brave, Samsung Internet, vivo Browser and any other browser (every app that opens web links, found again after installs), the Google app, and the address bar of in-app browsers.
+- **Matching:** whole words, any letter case, also inside search URLs (`?q=...`): `casino` blocks "best casino" but not "occasional". End a word with `*` to also block longer words: `porn*` blocks "pornography". While you type, the word you're still typing is ignored until it's finished, so `ass` doesn't block typing "assignment". Phrases (`bad word`) and other scripts (Tamil) work.
+- **How it's enforced (Device Owner):**
+  - An accessibility service (*DeviceGuard search blocker*) reads only browsers' address / search / title bars, not page content. DeviceGuard switches it on itself (needs the one-time `WRITE_SECURE_SETTINGS` grant from §0) and switches it back on within seconds if it's turned off in Settings → Accessibility (notification "Search keyword blocker is back on").
+  - While keywords exist, DeviceGuard can't be force-stopped or have its data cleared (`setUserControlDisabledPackages`); this also refuses `adb shell am force-stop`.
+  - Chrome's managed profile also gets `URLBlocklist` rules for Google (`.com`, `.co.in`), Bing, DuckDuckGo, Yahoo and YouTube searches that are exactly a keyword or start with it (lower, Title and UPPER case). Your blocked sites come first; Chrome takes 1000 rules, so with many keywords only some fit (the card says so). The accessibility blocker covers all of them.
+- **Removing a keyword:** tap it → filter guard (waiting time and puzzle) → Remove. With no keywords left the service and the force-stop protection are switched off automatically. **Release all** (Danger zone) also removes them.
+- **Without the one-time grant:** the card shows "Not running" and a button to Settings → Accessibility, where you turn on *DeviceGuard search blocker* by hand.
+
 ### Kiosk mode
 1. Apps → tap each app → tick **Allowed in kiosk**.
 2. Dashboard → **Kiosk** tile → **Start**. The phone shows only those apps as tiles; Back is disabled and Home returns to the kiosk screen.
@@ -606,6 +619,7 @@ MDM_App/
             ├── Secrets.kt               Encrypts the two-factor secret (Android Keystore, AES-256-GCM)
             ├── Holds.kt                 Who wants each app paused/hidden (manual, approval, screen time, Chrome-only, blocklist); applies the combined result
             ├── ScreenTime.kt            Limits, schedules, temporary unlock, usage queries, engine (evaluate)
+            ├── SearchBlocker.kt         Search keyword blocker: matching, accessibility service, Chrome rules, enforcement
             ├── ScreenTimeActivity.kt    Screen time screen + schedule editor
             ├── Totp.kt                  Two-factor TOTP (RFC 6238) + QR bitmap helper (zxing)
             ├── DeviceGuardApp.kt        Application: one-time setup at process start (notification channels)
@@ -782,6 +796,7 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | **testOnly per build type** | The manifest uses `android:testOnly="${testOnly}"`: `true` for debug (ADB escape hatch), `false` for release (needed for QR provisioning and auto-update, because Android refuses to install testOnly APKs there). |
 | **Usage access is ADB/Settings only** | Device Owner can't grant itself usage access: `appops set com.devguard.mdm GET_USAGE_STATS allow` (one-time). |
 | **Public GitHub repo** | The auto-updater and QR provisioning download releases without a token. Publishing (`tools\release.ps1 -Upload`) still needs your write token, kept on the PC; a release can't install on the phone unless it's signed with your keystore. |
+| **Keyword blocker needs accessibility** | Browser policies can't match a word inside a search (Chrome's URLBlocklist only matches a query's start, other browsers take no policies), so the blocker is an accessibility service. A Device Owner can't switch accessibility services on through `DevicePolicyManager`; DeviceGuard writes `enabled_accessibility_services` itself with the `WRITE_SECURE_SETTINGS` grant and re-enables it from `GuardService`. On a phone set up by QR without ADB, turn it on by hand once. |
 | **Chrome rules only work in Chrome** | Other browsers ignore Chrome policies, so **Allow only Chrome** hides other browsers (`ChromePolicy.setChromeOnly`) and `GuardService` hides newly installed ones (`ChromePolicy.isBrowser` = handles any `http` link). |
 | **Duplicate ADB device entries** | Wireless debugging can list the phone twice; use `adb -s <serial>`. |
 | **vivo account / App Clone / Private Space** | These count as accounts/users and block `set-device-owner`. Skip them in setup. |
@@ -867,5 +882,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-25 | **Public repo updates:** the updater no longer uses a GitHub token (deleted on update) and downloads the release APK directly; the latest version is read from github.com's `releases/latest` redirect instead of the API, whose 60-an-hour limit this network had already used up. The setup QR code's APK link defaults to the newest release. |
 | 2026-11-25 | **v2.1 (versionCode 3):** first public release build for other phones. Debug builds never install releases (no auto-install, Install explains why), so the development phone stays on the debug build. |
 | 2026-11-26 | **NextDNS removed; Smart DNS on Wi-Fi only.** NextDNS card, API client and its saved key/ID are gone (a phone still on a NextDNS host moves to the family filter used last, or AdGuard Family). Private DNS switches to Automatic only on a Wi-Fi network that blocks the filter; on mobile data the filter is always enforced; turning Wi-Fi off or disconnecting enforces the filter at once. |
+| 2026-11-26 | **Search keyword blocker:** searches containing a blocked keyword are stopped in every browser (accessibility service, switched on and kept on by DeviceGuard; DeviceGuard can't be force-stopped while keywords exist) plus Chrome policy rules; removing a keyword needs the filter guard. Reviewed by 5 independent reviewers with adversarial checks (27 confirmed findings fixed) and tested on the phone: test search blocked in Chrome, service re-enabled within 3 s after being turned off, everything switched off again when the last keyword was removed. The Chrome profile is now re-applied from settings at every baseline check. |
 
 © Sakthivel J

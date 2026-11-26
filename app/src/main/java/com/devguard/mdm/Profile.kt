@@ -70,6 +70,7 @@ object Profile {
         runCatching { Device.setUpdateMode(c, d.optInt("systemUpdate", 0)) }
 
         // Re-apply features from the imported settings.
+        runCatching { SearchBlocker.changed(c) }
         runCatching { ChromePolicy.apply(c) }
         Prefs.privateDnsHost(c)?.let { runCatching { PrivateDns.apply(c, it) } }
         runCatching { Device.applyWifiAllow(c) }

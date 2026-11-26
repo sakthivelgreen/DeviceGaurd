@@ -10,6 +10,8 @@ import android.os.Bundle
 /** Website rules enforced inside Chrome through its managed (enterprise) policies. No VPN needed. */
 object ChromePolicy {
     const val CHROME = "com.android.chrome"
+    /** Chrome ignores URLBlocklist entries beyond 1000. */
+    const val MAX_BLOCKLIST = 1000
 
     fun installed(c: Context) = runCatching { c.packageManager.getApplicationInfo(CHROME, PackageManager.MATCH_UNINSTALLED_PACKAGES) }.isSuccess
 
@@ -18,9 +20,15 @@ object ChromePolicy {
         val m = Mdm(c)
         if (!m.isOwner) return "Device Owner required"
         val b = Bundle()
-        if (Prefs.getFlag(c, Prefs.CHROME_ON)) {
-            // Your list + sites blocked by an active screen-time schedule.
-            b.putStringArray("URLBlocklist", (Prefs.domains(c) + Prefs.stSites(c)).sorted().toTypedArray())
+        val chromeOn = Prefs.getFlag(c, Prefs.CHROME_ON)
+        // Your list + sites blocked by an active screen-time schedule (Chrome rules on), plus searches starting with a
+        // blocked keyword (always, while there are keywords: the keyword blocker's Chrome layer).
+        // Chrome accepts at most 1000 entries: your sites first, then keyword rules while they fit.
+        val sites = if (chromeOn) (Prefs.domains(c) + Prefs.stSites(c)).sorted() else emptyList()
+        val keywordRules = SearchBlocker.chromeRules(c).filterNot { it in sites }
+        val blocklist = sites + keywordRules.take((MAX_BLOCKLIST - sites.size).coerceAtLeast(0))
+        if (blocklist.isNotEmpty()) b.putStringArray("URLBlocklist", blocklist.toTypedArray())
+        if (chromeOn) {
             if (Prefs.getFlag(c, Prefs.CHROME_SAFESITES)) b.putInt("SafeSitesFilterBehavior", 1)
             if (Prefs.getFlag(c, Prefs.CHROME_SAFESEARCH)) b.putBoolean("ForceGoogleSafeSearch", true)
             if (Prefs.getFlag(c, Prefs.CHROME_YOUTUBE)) b.putInt("ForceYouTubeRestrict", 1)
