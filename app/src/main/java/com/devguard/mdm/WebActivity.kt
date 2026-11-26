@@ -7,53 +7,15 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 /**
  * Website blocking, two layers:
- *  1. Family-safe filter via forced Private DNS (whole phone, every app), e.g. AdGuard Family or your NextDNS profile
- *  2. Your own blocked-site list enforced in Chrome via managed policies (and sent to NextDNS on request)
+ *  1. Family-safe filter via forced Private DNS (whole phone, every app), e.g. AdGuard Family
+ *  2. Your own blocked-site list enforced in Chrome via managed policies
  * The VPN filter was removed (R-03, 2026-11-25).
  */
 class WebActivity : BaseActivity() {
 
-    // NextDNS state (loaded from the API in the background)
-    private var nd: NextDns.State? = null
-    private var ndError: String? = null
-
     override fun onResume() {
         super.onResume()
-        if (!isFinishing) { render(); loadNextDns() }
-    }
-
-    private fun loadNextDns() {
-        if (!NextDns.configured(this)) return
-        inBackground({ runCatching { NextDns.load(this) } }) { r ->
-            nd = r.getOrNull(); ndError = r.exceptionOrNull()?.message
-            render()
-        }
-    }
-
-    /** Runs a NextDNS API change in the background, then reloads the state. */
-    private fun ndCall(block: () -> Unit) =
-        inBackground({ runCatching(block) }) { r -> r.exceptionOrNull()?.let { toast(it.message) }; loadNextDns() }
-
-    private fun nextDnsSetup() {
-        val col = column()
-        val id = EditText(this).apply { hint = "Profile ID, e.g. abc123"; setText(NextDns.id(this@WebActivity) ?: ""); isSingleLine = true }
-        val key = EditText(this).apply {
-            hint = "API key"
-            isSingleLine = true
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        }
-        col.text("Profile ID: nextdns.io → Setup tab (\"ID: abc123\").", 12f).alpha = 0.7f
-        col.addView(id)
-        col.text("API key: nextdns.io → Account → API. Leave empty to keep the saved key.", 12f).alpha = 0.7f
-        col.addView(key)
-        MaterialAlertDialogBuilder(this).setTitle("Connect NextDNS").setView(col)
-            .setPositiveButton("Save") { _, _ ->
-                Prefs.setStr(this, Prefs.NEXTDNS_ID, id.text.toString().trim())
-                if (key.text.isNotBlank()) act { Secrets.put(this, Prefs.NEXTDNS_KEY, key.text.toString().trim()) }
-                nd = null; ndError = null
-                render(); loadNextDns()
-            }
-            .setNegativeButton("Cancel", null).show()
+        if (!isFinishing) render()
     }
 
     private fun addDomains(d: Set<String>) {
@@ -83,20 +45,8 @@ class WebActivity : BaseActivity() {
 
     private val FAMILY_HOSTS = setOf("family.cloudflare-dns.com", "family.adguard-dns.com")
 
-    /**
-     * Leaves NextDNS for a built-in family filter (no filter guard: the phone stays filtered).
-     * The family filter used last is offered first.
-     */
-    private fun stopNextDns() {
-        val last = Prefs.getStr(this, PrivateDns.LAST_FAMILY)?.takeIf { it in FAMILY_HOSTS } ?: "family.adguard-dns.com"
-        val options = PrivateDns.PROVIDERS.filter { it.host in FAMILY_HOSTS }.sortedBy { if (it.host == last) 0 else 1 }
-        MaterialAlertDialogBuilder(this).setTitle("Switch back to")
-            .setItems(options.map { "${it.name}: ${it.desc}" }.toTypedArray()) { _, i -> setPrivateDns(options[i].host) }
-            .setNegativeButton("Cancel", null).show()
-    }
-
     private fun choosePrivateDns() {
-        val items = PrivateDns.PROVIDERS.map { "${it.name}: ${it.desc}" } + "Custom (NextDNS, etc.)"
+        val items = PrivateDns.PROVIDERS.map { "${it.name}: ${it.desc}" } + "Custom DNS-over-TLS host"
         MaterialAlertDialogBuilder(this).setTitle("Family-safe filter")
             .setItems(items.toTypedArray()) { _, i ->
                 if (i < PrivateDns.PROVIDERS.size) {
@@ -110,12 +60,12 @@ class WebActivity : BaseActivity() {
 
     private fun customPrivateDns() {
         val e = EditText(this).apply {
-            hint = "e.g. abc123.dns.nextdns.io"
+            hint = "e.g. dns.example.com"
             isSingleLine = true
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
         MaterialAlertDialogBuilder(this).setTitle("Custom Private DNS host")
-            .setMessage("Enter a DNS-over-TLS hostname. NextDNS gives you one with your own block list and categories, managed on their website.")
+            .setMessage("Enter a DNS-over-TLS hostname (port 853).")
             .setView(padded(e))
             .setPositiveButton("Apply") { _, _ ->
                 val h = e.text.toString().trim().lowercase()
@@ -219,56 +169,13 @@ class WebActivity : BaseActivity() {
             button("Choose filter") { choosePrivateDns() }.isEnabled = owner
             }
 
-            // ---- NextDNS categories ----
-            card("NextDNS categories") {
-                text(
-                    "Use your own NextDNS profile as the filter and choose categories (adult, gambling, social…) here. " +
-                        "Works in every app and in Private Space. Needs a free nextdns.io account.",
-                    13f,
-                ).alpha = 0.8f
-                if (!NextDns.configured(context)) {
-                    button("Connect NextDNS…") { nextDnsSetup() }.isEnabled = owner
-                } else {
-                    val using = Prefs.privateDnsHost(context) == NextDns.host(context)
-                    text("Profile: ${NextDns.id(context)}" + if (using) " · ✅ in use" else "", 14f, bold = true)
-                    if (!using) button("Use NextDNS as the filter") { setPrivateDns(NextDns.host(this@WebActivity)) }.isEnabled = owner
-                    else button("Stop using NextDNS", outlined = true) { stopNextDns() }.isEnabled = owner
-                    // NextDNS switches change the online profile directly; no filter guard (removed on request).
-                    val st = nd
-                    when {
-                        ndError != null -> text("⚠️ $ndError", 12f, color = Palette.ORANGE)
-                        st == null -> text("Loading categories…", 12f).alpha = 0.6f
-                        else -> {
-                            NextDns.CATEGORIES.forEach { (id, name) ->
-                                switchRow(name, null, st.categories[id] == true, owner) { _, on ->
-                                    ndCall { NextDns.setCategory(this@WebActivity, id, on) }; true
-                                }
-                            }
-                            switchRow("SafeSearch", "Google, Bing, YouTube search", st.safeSearch, owner) { _, on ->
-                                ndCall { NextDns.setFlag(this@WebActivity, "safeSearch", on) }; true
-                            }
-                            switchRow("YouTube restricted mode", null, st.youtube, owner) { _, on ->
-                                ndCall { NextDns.setFlag(this@WebActivity, "youtubeRestrictedMode", on) }; true
-                            }
-                            switchRow("Block bypass methods", "VPNs, proxies, other DNS", st.blockBypass, owner) { _, on ->
-                                ndCall { NextDns.setFlag(this@WebActivity, "blockBypass", on) }; true
-                            }
-                        }
-                    }
-                    button("Send my blocked sites to NextDNS", outlined = true) {
-                        inBackground({ NextDns.syncDenylist(this@WebActivity) }) { toast("$it site(s) added to NextDNS") }
-                    }.isEnabled = owner
-                    button("Change NextDNS account…", outlined = true) { nextDnsSetup() }
-                }
-            }
-
             // ---- Smart DNS: switch to Automatic on networks that block the filter ----
             if (Prefs.privateDnsHost(context) != null) card("When the filter's DNS can't connect") {
                 text(
-                    "If the filter's secure DNS can't connect (office Wi-Fi blocking port 853, the filter service down, a mobile data problem), " +
-                        "the internet would stop working. DeviceGuard notices within seconds and switches Private DNS to Automatic, so the internet keeps working " +
-                        "(no family filter meanwhile; Chrome rules still apply). The filter comes back when you change network, and on mobile data it's " +
-                        "re-checked every 3 minutes and when the screen turns on. No VPN is used.",
+                    "Only on Wi-Fi: if a Wi-Fi network (e.g. office Wi-Fi) blocks the filter's secure DNS (port 853), DeviceGuard switches " +
+                        "Private DNS to Automatic so the internet works there (no family filter meanwhile; Chrome rules still apply), and re-checks " +
+                        "every 3 minutes. The filter is enforced again the moment Wi-Fi disconnects or is turned off. On mobile data the filter " +
+                        "is always on: it never switches to Automatic.",
                     13f,
                 ).alpha = 0.8f
                 switchRow(
@@ -277,7 +184,7 @@ class WebActivity : BaseActivity() {
                     SmartDns.autoOn(context), owner && PrivateDns.canWrite(context),
                 ) { _, on -> SmartDns.setAuto(this@WebActivity, on); render(); true }
                 text(
-                    if (SmartDns.fallbackActive(context)) "⚠️ Now: Automatic (the filter's DNS can't be reached on this network)"
+                    if (SmartDns.fallbackActive(context)) "⚠️ Now: Automatic (this Wi-Fi blocks the filter's DNS)"
                     else "✅ Now: Private DNS filter",
                     13f, bold = true,
                     color = if (SmartDns.fallbackActive(context)) Palette.ORANGE else Palette.GREEN,
@@ -290,7 +197,7 @@ class WebActivity : BaseActivity() {
 
             // ---- Blocked-site list ----
             card("Your blocked sites") {
-            text("Used by the Chrome rules, and sent to NextDNS with the button in the NextDNS card. Blocking a domain also blocks its subdomains.", 13f).alpha = 0.8f
+            text("Used by the Chrome rules. Blocking a domain also blocks its subdomains.", 13f).alpha = 0.8f
             val input = EditText(context).apply {
                 hint = "example.com"
                 isSingleLine = true
@@ -370,7 +277,7 @@ class WebActivity : BaseActivity() {
             }
             text(
                 "Chrome rules don't reach browsers inside Private Space or the built-in browsers of apps like Instagram. " +
-                    "To block your site list there too, use a custom Private DNS (e.g. NextDNS) in the Family-safe filter above.",
+                    "Use Allow only Chrome to hide other browsers; the family filter above still covers every app.",
                 12f,
             ).alpha = 0.65f
 

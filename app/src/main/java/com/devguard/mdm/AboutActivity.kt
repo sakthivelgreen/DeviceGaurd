@@ -29,7 +29,7 @@ class AboutActivity : BaseActivity() {
                         "• Approved-apps mode: new installs stay paused until approved\n" +
                         "• Hide, suspend, block uninstall or remove any app\n" +
                         "• Bloatware cleanup with Safe / Caution / Keep ratings\n" +
-                        "• Website blocking: Private DNS family filter or NextDNS, Chrome rules\n" +
+                        "• Website blocking: Private DNS family filter, Chrome rules\n" +
                         "• 20+ device restrictions (factory reset, safe mode, USB, Wi-Fi…)\n" +
                         "• Kiosk mode: lock the phone to chosen apps\n" +
                         "• Everything is managed on the phone, protected by a PIN",

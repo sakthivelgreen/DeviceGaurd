@@ -175,7 +175,7 @@ Security: the ADB reset only accepts the ADB shell (the receiver requires the `D
 | **Install control** | **Approved apps only**: new installs are paused until you approve them (apps installed while the admin panel is unlocked are approved automatically). **Block all installs**: nothing can be installed, including over ADB. |
 | **Per-app control** | For any app: Hidden, Suspended, Block uninstall, Approved, Allowed in kiosk, plus silent **Uninstall** for user-installed apps. |
 | **Blocked apps** | "Always block" list from a Play Store link, a package name, the installed apps, or quick-add tiles. A blocked app is **silently uninstalled the moment it's installed**, with an "… is not allowed" notification. |
-| **Website blocking** | (1) **Family-safe filter**: forced and locked Private DNS (Cloudflare Family / Security, AdGuard Family, or your NextDNS profile, which can also block your own site list in every app). (2) **Chrome rules**: your blocked-site list, adult filter, SafeSearch, YouTube restricted mode, no incognito, and hide other browsers. |
+| **Website blocking** | (1) **Family-safe filter**: forced and locked Private DNS (Cloudflare Family / Security, AdGuard Family, or a custom DNS-over-TLS host). (2) **Chrome rules**: your blocked-site list, adult filter, SafeSearch, YouTube restricted mode, no incognito, and hide other browsers. |
 | **Device restrictions** | Camera, screenshots, factory reset, safe mode, add users, accounts, app settings, developer options/ADB, installs/uninstalls, sideloading, Wi-Fi, mobile network, hotspot, Bluetooth, VPN, Private DNS, USB file transfer, SD card, date/time, location, calls, SMS. |
 | **Bloatware** | Every built-in app rated **Safe / Caution / Keep / Unknown** in 2×2 tabs. **Per-app on/off switch**, restore, and copyable ADB "remove completely" command. PC script `tools\debloat.ps1` for bulk list/disable/remove/restore with an undo log. |
 | **Background apps** | **Force stop** any app (Apps → app → Actions…, or Background apps → tap). **No background running** per app: listed apps are force-stopped ~10 s after the screen turns off. Optional Android **Restricted** mode over ADB (`tools\background.ps1`). |
@@ -186,7 +186,6 @@ Security: the ADB reset only accepts the ADB shell (the receiver requires the `D
 | **System updates** | Phone default / install automatically / install at night / postpone 30 days. |
 | **Profile backup** | Export every setting to a JSON file and import it again, e.g. after a reset. Secrets aren't exported. |
 | **QR provisioning** | Set up another phone as Device Owner by scanning a QR code during setup, with no PC. |
-| **NextDNS categories** | Use your NextDNS profile as the filter and switch categories (adult, gambling, dating, piracy, social, gaming, video) plus SafeSearch, YouTube restricted and block-bypass from the app. |
 | **Lock screen & branding** | "Managed by **Sakthivel J**" instead of "your organization", plus your own lock screen line and the message shown when something is blocked. The managed notice itself can't be hidden. |
 | **App updates** | Silent auto-update from GitHub Releases (`build-<versionCode>` tags). `tools\release.ps1` builds and publishes. |
 | **Kiosk mode** | Lock the phone to chosen apps (lock task mode plus a forced home screen showing app tiles). |
@@ -399,13 +398,13 @@ For an extra layer, use the Play Store's own **parental controls** (Play Store �
    | Cloudflare Family | `family.cloudflare-dns.com` | Adult content and malware |
    | Cloudflare Security | `security.cloudflare-dns.com` | Malware |
    | AdGuard Family | `family.adguard-dns.com` | Adult content, ads, trackers; SafeSearch |
-   | Custom | e.g. `abc123.dns.nextdns.io` | Your NextDNS/other rules |
+   | Custom | e.g. `dns.example.com` | Any DNS-over-TLS filter |
 
    The Private DNS setting is then locked.
-2. **Your blocked sites:** add domains (subdomains included) or quick-add tiles (Social media, Video, Games). The list feeds the Chrome rules, and **Send my blocked sites to NextDNS** copies it to your NextDNS denylist (every app).
+2. **Your blocked sites:** add domains (subdomains included) or quick-add tiles (Social media, Video, Games). The list feeds the Chrome rules.
 3. **Chrome rules:** **Enforce in Chrome** plus options (adult filter, SafeSearch, YouTube restricted, no incognito). Restart Chrome and check `chrome://policy`.
    - **Allow only Chrome** (switch): hides every other browser now and **any browser installed later** (with a "… is not allowed" notification). Turning it off restores them. Chrome rules only work in Chrome, so other browsers must be blocked.
-   - Chrome rules **can't reach** browsers inside **Private Space** or the built-in browsers of apps (Instagram, Google app…). To block *your own* site list there too, use a **custom Private DNS** such as NextDNS (free tier) in the Family-safe filter. Add your sites in the NextDNS dashboard and enter its DNS-over-TLS hostname (e.g. `abc123.dns.nextdns.io`) under Choose filter → Custom.
+   - Chrome rules **can't reach** browsers inside **Private Space** or the built-in browsers of apps (Instagram, Google app…). Turn on **Allow only Chrome** to hide other browsers; the family filter still covers every app.
 
 **Recommended:** Cloudflare Family + Chrome rules + hide other browsers + Approved apps only.
 
@@ -414,7 +413,7 @@ For an extra layer, use the Play Store's own **parental controls** (Play Store �
 2. **Maths:** a 2-digit × 2-digit multiplication.
 3. **Cooling-off wait:** none, 15 (default), 30 or 60 minutes. After solving, wait, then repeat the same action **within 10 minutes** to confirm, or the request expires. The wait uses the time since boot, so changing the clock doesn't skip it and a reboot restarts it. The wait belongs to **that one action**: a different action can't be confirmed with it (you're asked to cancel the waiting request first).
 
-Guarded actions (Websites screen, plus **Settings → Import profile**, because a profile can turn filters off): filter → Off, a weaker filter (Cloudflare Security) or Custom; turning off any Chrome rule, Allow only Chrome or the incognito block; unblocking a site; shortening the wait; turning the guard off. The **Switch to Automatic when blocked** switch, all **NextDNS** switches and **Stop using NextDNS** are **not** guarded. Switching between the family filters (Cloudflare Family ↔ AdGuard Family) is free. Restrictions, Blocked apps and the Danger zone are **not** guarded. A PIN reset doesn't turn the guard off.
+Guarded actions (Websites screen, plus **Settings → Import profile**, because a profile can turn filters off): filter → Off, a weaker filter (Cloudflare Security) or Custom; turning off any Chrome rule, Allow only Chrome or the incognito block; unblocking a site; shortening the wait; turning the guard off. The **Switch to Automatic when blocked** switch is **not** guarded. Switching between the family filters (Cloudflare Family ↔ AdGuard Family) is free. Restrictions, Blocked apps and the Danger zone are **not** guarded. A PIN reset doesn't turn the guard off.
 
 **Which layer blocks what.** The DNS filter (Private DNS) is the **main protection**. Chrome rules are an extra layer.
 
@@ -430,19 +429,18 @@ When no DNS filter is active, the dashboard **Websites** tile turns red ("⚠ No
 
 **Incognito in other browsers:** only Chrome accepts a policy to disable private browsing on Android, so **Disable incognito / private browsing** also turns on **Allow only Chrome** (other browsers hidden, new ones hidden on install).
 
-**When the filter's DNS can't connect (Smart DNS).** Some networks, often office Wi-Fi, block the filter's secure DNS port **853**. With a strict Private DNS filter the internet then stops working. DeviceGuard switches **Private DNS to Automatic** on that network so the internet keeps working (Websites → **When the filter's DNS can't connect** → *Switch to Automatic when blocked*, on by default). **No VPN is used** (the old VPN backup made many apps fail to open, so it was removed on 2026-11-23).
+**When the filter's DNS can't connect (Smart DNS, Wi-Fi only).** Some Wi-Fi networks, often office Wi-Fi, block the filter's secure DNS port **853**. With a strict Private DNS filter the internet then stops working there. DeviceGuard switches **Private DNS to Automatic on that Wi-Fi only** (Websites → **When the filter's DNS can't connect** → *Switch to Automatic when blocked*, on by default). On mobile data the filter is mandatory: it never switches to Automatic. No VPN is used.
 
 | Situation | What happens | Internet gap |
 |---|---|---|
-| Port 853 works (home, mobile data) | Normal Private DNS filter (whole phone, incl. Private Space) | none |
-| New network blocks 853 | Detected on connect (TLS test to the filter, 2–4 s) → Private DNS set to **Automatic** (no family filter on this network) | ~2–4 s, once |
-| Same network again | Remembered → switches instantly, then re-checked in the background | ~0–2 s |
-| Back on a normal network | Private DNS filter restored | none |
-| Filter stops responding on the **same** network (service down, mobile data problem) | Android marks the connection *not validated* → DeviceGuard tests the filter at once (with one retry) → **Automatic** | a few seconds |
-| On **mobile data** while on Automatic | Re-checked **every 3 minutes** and when the screen turns on; filter switched back as soon as it connects | none |
+| Port 853 works (home Wi-Fi) | Normal Private DNS filter | none |
+| A Wi-Fi network blocks 853 | Detected on connect (TLS test to the filter, 2–4 s, one retry) → Private DNS set to **Automatic** on that Wi-Fi | ~2–4 s, once |
+| Same Wi-Fi again | Remembered → switches instantly, then re-checked in the background | ~0–2 s |
+| While on Automatic on that Wi-Fi | Re-checked **every 3 minutes** and when the screen turns on; filter back as soon as it connects | none |
+| **Wi-Fi turned off or disconnected** | `WIFI_STATE_CHANGED` / default network lost → the filter is **enforced at once** | none |
+| **Mobile data** (or any non-Wi-Fi network) | Filter always enforced, never Automatic (if the filter itself is down, mobile internet waits for it) | none |
 
-- On Wi-Fi, Automatic is re-checked when the network changes (not every few minutes), so an office network that blocks the filter isn't tested over and over.
-- A notification "Private DNS on Automatic" shows while it's active; the Websites screen shows the filter as *paused* (orange).
+- A notification "Private DNS on Automatic" shows while a Wi-Fi network has it on Automatic; the Websites screen shows the filter as *paused* (orange).
 - On such a network only the **Chrome rules** still block (your site list, SafeSites, SafeSearch). The family DNS filter does not.
 - The lock stays on: while paused, Private DNS is held at Automatic and changes are reverted; elsewhere it's held at the filter.
 - Wi-Fi login pages (captive portals) are left alone until you've logged in.
@@ -453,7 +451,7 @@ When no DNS filter is active, the dashboard **Websites** tile turns red ("⚠ No
 ```powershell
 $adb = ".\platform-tools\adb.exe"
 & $adb shell settings put global private_dns_mode hostname
-& $adb shell settings put global private_dns_specifier family.cloudflare-dns.com   # or family.adguard-dns.com / your NextDNS host
+& $adb shell settings put global private_dns_specifier family.cloudflare-dns.com   # or family.adguard-dns.com
 & $adb shell settings get global private_dns_specifier                              # check
 ```
 Then in the app turn on **Restrictions → Lock Private DNS**, so the user can't change it. The Websites screen shows it as "Current: Cloudflare Family". To turn it off: `& $adb shell settings put global private_dns_mode opportunistic`.
@@ -526,13 +524,6 @@ Dashboard → **Settings**:
 - **Set up another phone (QR code):** the APK link is filled in with the newest GitHub release (`https://github.com/sakthivelgreen/DeviceGaurd/releases/latest/download/DeviceGuard.apk`); add Wi-Fi if needed, then *Show QR*. On the new phone: welcome screen → tap 6 times → scan. Android downloads DeviceGuard, checks its signature and makes it Device Owner. Then set the PIN and import your profile. The QR code carries this app's signing-key fingerprint, so only your APK is accepted.
 - **App updates:** repository (default `sakthivelgreen/DeviceGaurd`, public, so no token). The check uses github.com's `releases/latest` redirect, not GitHub's API (which allows only 60 calls an hour per network); only APKs signed with this app's key, newer than the installed version and matching the `build-<versionCode>` tag are installed. *Check for updates now*, or turn on *Check daily (auto-install)*. Updates install silently as Device Owner. Debug builds never install a release (the development phone keeps its ADB escape hatch).
 
-### NextDNS categories
-Websites → **NextDNS categories** → *Connect NextDNS…* → Profile ID (nextdns.io → Setup, e.g. `abc123`) + API key (nextdns.io → Account → API). Then:
-- **Use NextDNS as the filter**: sets Private DNS to `abc123.dns.nextdns.io` (locked, switches to Automatic on networks that block it, like the other filters).
-- Switch categories: Adult content, Gambling, Dating, Piracy, Social networks, Online gaming, Video streaming. Plus **SafeSearch**, **YouTube restricted mode** and **Block bypass methods**. These switches change your NextDNS profile instantly, on or off, with no Filter guard.
-- **Stop using NextDNS** (shown while NextDNS is the filter): pick **AdGuard Family** or **Cloudflare Family** (the one used last is listed first). The phone switches straight to it, with no guard, so it's never left unfiltered. The NextDNS key and profile stay saved; tap *Use NextDNS as the filter* to go back.
-- **Send my blocked sites to NextDNS**: copies your blocked-site list to the NextDNS denylist, so it applies in every app and in Private Space.
-
 ### Kiosk mode
 1. Apps → tap each app → tick **Allowed in kiosk**.
 2. Dashboard → **Kiosk** tile → **Start**. The phone shows only those apps as tiles; Back is disabled and Home returns to the kiosk screen.
@@ -592,7 +583,7 @@ MDM_App/
             ├── MainActivity.kt          PIN gate (setup/login) + tile dashboard + danger zone
             ├── AppsActivity.kt          Play Store tiles, install policy, RecyclerView app list, per-app dialog, uninstall
             ├── BlockListActivity.kt     Always-block list UI
-            ├── WebActivity.kt           Private DNS / NextDNS, blocked sites, Chrome rules UI
+            ├── WebActivity.kt           Private DNS, blocked sites, Chrome rules UI
             ├── RestrictionsActivity.kt  Restriction switches (from RESTRICTION_GROUPS)
             ├── BloatActivity.kt         Bloatware tabs + per-app switches
             ├── KioskActivity.kt         Kiosk home screen (lock task)
@@ -612,7 +603,7 @@ MDM_App/
             ├── Guard.kt                 Filter guard: puzzle, maths, cooling-off wait (`Guard.require`)
             ├── AppControl.kt            Force stop (hide/unhide), silent uninstall, no-background list, Restricted-mode ADB commands
             ├── Notify.kt                Notification channels + helper; InstallResultReceiver (uninstall/update failures)
-            ├── Secrets.kt               Encrypts the NextDNS key and two-factor secret (Android Keystore, AES-256-GCM)
+            ├── Secrets.kt               Encrypts the two-factor secret (Android Keystore, AES-256-GCM)
             ├── Holds.kt                 Who wants each app paused/hidden (manual, approval, screen time, Chrome-only, blocklist); applies the combined result
             ├── ScreenTime.kt            Limits, schedules, temporary unlock, usage queries, engine (evaluate)
             ├── ScreenTimeActivity.kt    Screen time screen + schedule editor
@@ -625,7 +616,6 @@ MDM_App/
             ├── Branding.kt              Organization name, lock screen message, support messages (defaults: Sakthivel J)
             ├── Profile.kt               Policy profile export/import (JSON)
             ├── Updater.kt               GitHub Releases auto-update (silent PackageInstaller install)
-            ├── NextDns.kt               NextDNS API: categories, SafeSearch/YouTube/bypass, denylist sync
             ├── BackgroundActivity.kt    Background apps screen
             └── Ui.kt                    UI kit: pages, cards, tiles, tabs, switches, dialogs, palette
 ```
@@ -785,9 +775,8 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | **"Unaffiliated users" error (Private DNS filter)** | Phone-wide policies such as Private DNS need **every user to be affiliated** with the Device Owner. Private Space can never be affiliated (Android doesn't allow an admin inside it), so the app can't set Private DNS while it exists. **Workarounds that keep Private Space:** (1) set Private DNS **from the PC** (see *Websites → Private Space on the phone* in §7), whole phone; (2) Chrome rules (Chrome only). Check users with `adb shell pm list users`. |
 | **vivo ignores "Lock Private DNS"** | The restriction is applied (`dumpsys device_policy` shows `disallow_config_private_dns = true`), but vivo's custom Private DNS screen doesn't check it. Fix: `WRITE_SECURE_SETTINGS` granted over ADB. `GuardService` watches `private_dns_mode`/`private_dns_specifier` with a `ContentObserver` and restores the chosen host (`PrivateDns.enforce`). |
 | **"Lock Private DNS" also blocks DeviceGuard** | While `DISALLOW_CONFIG_PRIVATE_DNS` is on, Android's SettingsProvider **silently ignores** writes to `private_dns_*` from every app and from `adb shell settings put` (only the system Settings app is exempt, which is how vivo Settings can switch it off). `PrivateDns.write()` lifts the restriction for a moment, writes, reads it back to check, and re-applies it. To change Private DNS from the PC, first turn the lock off in the app. |
-| **Secrets are encrypted** | The NextDNS API key, GitHub token and two-factor secret are stored as `enc1:…` (AES-256-GCM, key in the Android Keystore, never exportable). Read/write them only through `Secrets.get` / `Secrets.put`. Wiping the app's data deletes the Keystore key, so these must be entered again. Profile export never includes them. |
+| **Secrets are encrypted** | The two-factor secret is stored as `enc1:…` (AES-256-GCM, key in the Android Keystore, never exportable). Read/write them only through `Secrets.get` / `Secrets.put`. Wiping the app's data deletes the Keystore key, so these must be entered again. Profile export never includes them. |
 | **One paused/hidden flag, many features** | Android has a single suspended flag and a single hidden flag per app, but manual Apps controls, Approved apps only, Screen time, Allow only Chrome and Blocked apps all use them. `Holds.kt` keeps one list per feature; an app stays paused/hidden while any list has it. Always change pause/hide through `Holds.set(...)`, never `Mdm.setSuspended/setHidden` directly (force stop's brief hide/unhide is the one exception). |
-| **Switching away from NextDNS** | Android checks a new Private DNS host by looking its name up through the *current* DNS. NextDNS *Block bypass methods* answers 127.0.0.1 for other DNS services, so the check fails. `PrivateDns.reachable` tests built-in filters by their bootstrap IPs (TLS with the hostname) and `apply` writes the setting directly when Android's check is wrong. |
 | **Networks that block port 853** | Strict Private DNS has no fallback, so the internet dies. `SmartDns` tests 853 with bootstrap IPs (no DNS needed) and switches Private DNS to Automatic on that network. The earlier VPN/DoH backup was removed because many apps failed to open through the VPN. |
 | **No Device Owner API for force stop or background restriction** | Force stop = `setApplicationHidden(true)` then `false` (hiding kills the app). `GuardService` ignores the resulting "package added" broadcast (`AppControl.isIgnored`). Android's Restricted mode (`RUN_ANY_IN_BACKGROUND` appop + `restricted` standby bucket) is ADB-only, so the app builds the commands. Reading the state needs the `GET_APP_OPS_STATS` grant. Check on each launcher that hide/unhide keeps the home-screen icon in place. |
 | **testOnly per build type** | The manifest uses `android:testOnly="${testOnly}"`: `true` for debug (ADB escape hatch), `false` for release (needed for QR provisioning and auto-update, because Android refuses to install testOnly APKs there). |
@@ -877,5 +866,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-25 | `ISSUES.md` removed from git and git-ignored; it stays on the development PC as the local issue tracker. |
 | 2026-11-25 | **Public repo updates:** the updater no longer uses a GitHub token (deleted on update) and downloads the release APK directly; the latest version is read from github.com's `releases/latest` redirect instead of the API, whose 60-an-hour limit this network had already used up. The setup QR code's APK link defaults to the newest release. |
 | 2026-11-25 | **v2.1 (versionCode 3):** first public release build for other phones. Debug builds never install releases (no auto-install, Install explains why), so the development phone stays on the debug build. |
+| 2026-11-26 | **NextDNS removed; Smart DNS on Wi-Fi only.** NextDNS card, API client and its saved key/ID are gone (a phone still on a NextDNS host moves to the family filter used last, or AdGuard Family). Private DNS switches to Automatic only on a Wi-Fi network that blocks the filter; on mobile data the filter is always enforced; turning Wi-Fi off or disconnecting enforces the filter at once. |
 
 © Sakthivel J

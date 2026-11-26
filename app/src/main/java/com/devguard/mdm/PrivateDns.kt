@@ -21,7 +21,7 @@ object PrivateDns {
     /** One-time ADB grant that lets the app write and lock Private DNS itself. */
     const val ADB_GRANT = "adb shell pm grant ${BuildConfig.APPLICATION_ID} android.permission.WRITE_SECURE_SETTINGS"
 
-    /** Prefs key: the last built-in filter host used (offered first when leaving NextDNS). */
+    /** Prefs key: the last built-in filter host used (restored when a removed NextDNS host is migrated). */
     const val LAST_FAMILY = "lastFamilyDns"
 
     private const val MODE = "private_dns_mode"
@@ -156,7 +156,7 @@ object PrivateDns {
             else -> return "Couldn't set Private DNS"
         }
         Prefs.setPrivateDnsHost(c, host)
-        if (PROVIDERS.any { it.host == host }) Prefs.setStr(c, LAST_FAMILY, host) // for "Stop using NextDNS"
+        if (PROVIDERS.any { it.host == host }) Prefs.setStr(c, LAST_FAMILY, host) // the family filter used last
         runCatching { m.setRestriction(android.os.UserManager.DISALLOW_CONFIG_PRIVATE_DNS, true) }
         GuardService.refresh(c)
         return if (canWrite(c)) "Filter active: $host (locked: any change is reverted automatically)"

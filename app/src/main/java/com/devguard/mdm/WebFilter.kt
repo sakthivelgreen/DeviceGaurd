@@ -5,7 +5,7 @@ import android.content.Context
 
 /**
  * Your blocked-site list: input cleanup, presets, and "is any DNS filter on?".
- * R-03 (2026-11-25): the VPN filter was removed; NextDNS / Private DNS block sites in every app, Chrome rules in Chrome.
+ * R-03 (2026-11-25): the VPN filter was removed; the Private DNS family filter covers every app, Chrome rules block your list in Chrome.
  */
 object WebFilter {
     /** True if a DNS-level filter (Private DNS, or its Automatic fallback on a blocking network) is set. */
@@ -22,6 +22,20 @@ object WebFilter {
         if (m.isOwner && runCatching { m.dpm.getAlwaysOnVpnPackage(m.admin) }.getOrNull() == c.packageName)
             runCatching { m.dpm.setAlwaysOnVpnPackage(m.admin, null, false) }
         Prefs.removeLegacyVpnKeys(c)
+    }
+
+    /**
+     * NextDNS support was removed (2026-11-26): delete its saved API key and profile ID, and move a phone still on a
+     * NextDNS host to the family filter it used last (AdGuard Family if none). A direct settings write: no network.
+     */
+    fun removeNextDns(c: Context) {
+        if (Secrets.has(c, Prefs.NEXTDNS_KEY)) Secrets.put(c, Prefs.NEXTDNS_KEY, null)
+        if (Prefs.getStr(c, Prefs.NEXTDNS_ID) != null) Prefs.setStr(c, Prefs.NEXTDNS_ID, null)
+        val host = Prefs.privateDnsHost(c) ?: return
+        if (!host.endsWith(".nextdns.io")) return
+        val family = Prefs.getStr(c, PrivateDns.LAST_FAMILY)?.takeIf { f -> PrivateDns.PROVIDERS.any { it.host == f } } ?: "family.adguard-dns.com"
+        Prefs.setPrivateDnsHost(c, family)
+        if (!SmartDns.fallbackActive(c)) PrivateDns.write(c, family)
     }
 
     /** Turns user input like "https://www.Example.com/path" into "example.com". */

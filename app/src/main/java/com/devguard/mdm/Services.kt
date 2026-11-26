@@ -67,6 +67,7 @@ class GuardService : Service() {
 
         // Smart DNS: check every network the moment it connects or changes.
         runCatching { connectivity.registerDefaultNetworkCallback(netCallback) }
+        runCatching { registerReceiver(wifiReceiver, IntentFilter(android.net.wifi.WifiManager.WIFI_STATE_CHANGED_ACTION)) }
 
         // Background apps: stop listed apps shortly after the screen turns off.
         val sf = IntentFilter().apply {
@@ -98,10 +99,9 @@ class GuardService : Service() {
                     runCatching { ScreenTime.evaluate(c) }
                     if (i.action == Intent.ACTION_SCREEN_ON) runCatching { Updater.autoCheck(c) }
                 }
-                // Reconnect check: only while the filter is on Automatic because it couldn't connect, and only on
-                // mobile data (every 3 minutes and on screen on). Wi-Fi is re-checked when the network changes.
+                // Reconnect check while a Wi-Fi network has the filter on Automatic (every 3 minutes and on screen on).
                 val now = android.os.SystemClock.elapsedRealtime()
-                if (SmartDns.enabled(c) && SmartDns.fallbackActive(c) && SmartDns.onMobileData(c) &&
+                if (SmartDns.enabled(c) && SmartDns.fallbackActive(c) && SmartDns.onWifi(c) &&
                     (i.action == Intent.ACTION_SCREEN_ON || now - lastDnsCheck >= DNS_CHECK_MS)
                 ) {
                     lastDnsCheck = now
@@ -130,8 +130,19 @@ class GuardService : Service() {
         netHandler.postDelayed(r, delayMs)
     }
 
+    /** Wi-Fi turned off: enforce the filter at once (don't wait for the next network to settle). */
+    private val wifiReceiver = object : BroadcastReceiver() {
+        override fun onReceive(c: Context, i: Intent) {
+            val state = i.getIntExtra(android.net.wifi.WifiManager.EXTRA_WIFI_STATE, -1)
+            if (state == android.net.wifi.WifiManager.WIFI_STATE_DISABLED || state == android.net.wifi.WifiManager.WIFI_STATE_DISABLING)
+                netExec.execute { runCatching { SmartDns.enforce(c) } }
+        }
+    }
+
     private val netCallback = object : android.net.ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: android.net.Network) = scheduleCheck(network, 300)
+        // Default network gone (e.g. Wi-Fi disconnected with no mobile data): enforce the filter right away.
+        override fun onLost(network: android.net.Network) { netExec.execute { runCatching { SmartDns.enforce(this@GuardService) } } }
         override fun onLinkPropertiesChanged(network: android.net.Network, lp: android.net.LinkProperties) = scheduleCheck(network, 800)
         override fun onCapabilitiesChanged(network: android.net.Network, caps: android.net.NetworkCapabilities) {
             // With a strict Private DNS filter, Android drops VALIDATED when the filter can't be reached:
@@ -174,6 +185,7 @@ class GuardService : Service() {
         runCatching { contentResolver.unregisterContentObserver(dnsObserver) }
         runCatching { contentResolver.unregisterContentObserver(timeObserver) }
         runCatching { connectivity.unregisterNetworkCallback(netCallback) }
+        runCatching { unregisterReceiver(wifiReceiver) }
         runCatching { unregisterReceiver(screenReceiver) }
         netHandler.removeCallbacks(stopListedRunnable)
         netExec.shutdownNow()

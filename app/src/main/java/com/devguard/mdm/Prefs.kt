@@ -58,7 +58,7 @@ object Prefs {
      * another phone. Profile.export also skips any encrypted value ("enc1:"), as a safety net for secrets added later.
      */
     val NOT_EXPORTED: Set<String> by lazy {
-        credKeys(PIN).toSet() + credKeys(REC) + Secrets.KEYS + TOTP_LAST_STEP + Session.STATE_KEYS +
+        credKeys(PIN).toSet() + credKeys(REC) + Secrets.KEYS + NEXTDNS_ID + TOTP_LAST_STEP + Session.STATE_KEYS +
             // runtime / device state
             setOf(GUARD_WAIT_START, GUARD_WAIT_WHAT, BG_LAST_RUN, BG_LAST_COUNT, DNS_FALLBACK, UPD_LAST, K_DNS_BLOCKED_NETS,
                 ST_TEMP_ALLOW, K_KIOSK_ON, Holds.MIGRATED) +
@@ -177,6 +177,7 @@ object Prefs {
     const val UPD_TOKEN = "updToken"
     const val UPD_AUTO = "updAuto"
     const val UPD_LAST = "updLast"
+    // Removed NextDNS support: kept only so old values are deleted (WebFilter.removeNextDns) and never exported.
     const val NEXTDNS_KEY = "nextdnsKey"
     const val NEXTDNS_ID = "nextdnsId"
 

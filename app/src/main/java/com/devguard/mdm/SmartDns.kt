@@ -6,8 +6,9 @@ import android.content.Context
 /**
  * Smart DNS: keeps the family filter working on networks that block DNS-over-TLS (port 853), e.g. office Wi-Fi.
  *
- *  - On every network change GuardService calls [check]. It tests port 853 to the filter on that network (2–4 s).
- *  - Blocked → [enterFallback]: Private DNS is set to "automatic" so the internet works (no family filter on that network).
+ *  - On every network change GuardService calls [check]. Only Wi-Fi networks are tested (port 853, 2–4 s).
+ *  - Wi-Fi blocks it → [enterFallback]: Private DNS is set to "automatic" so the internet works on that Wi-Fi.
+ *  - Mobile data / any non-Wi-Fi network, Wi-Fi off or disconnected → the filter is enforced at once, no test, no fallback.
  *    No VPN is used any more (many apps failed to open through it).
  *  - Networks that blocked 853 are remembered → next time it switches instantly (then re-verified in the background).
  *  - 853 works again → [exitFallback]: Private DNS filter restored.
@@ -27,7 +28,6 @@ object SmartDns {
         host == "security.cloudflare-dns.com" -> listOf("1.1.1.2", "1.0.0.2")
         host == "family.adguard-dns.com" -> listOf("94.140.14.15", "94.140.15.16")
         host == "dns.adguard-dns.com" -> listOf("94.140.14.14", "94.140.15.15")
-        host.endsWith(".dns.nextdns.io") -> listOf("45.90.28.0", "45.90.30.0")
         else -> emptyList()
     }
 
@@ -82,6 +82,8 @@ object SmartDns {
         val caps = cm.getNetworkCapabilities(n) ?: return
         if (caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_VPN)) return
         if (caps.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_CAPTIVE_PORTAL)) return // wait for Wi-Fi login
+        // Not Wi-Fi (mobile data, Ethernet…): the filter is mandatory, never Automatic.
+        if (!caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)) { enforce(c); return }
         val key = networkKey(cm, n) ?: return
         val now = android.os.SystemClock.elapsedRealtime()
         if (!force && key == lastKey && now - lastAt < 60_000) return
@@ -101,14 +103,20 @@ object SmartDns {
         }
     }
 
-    fun onMobileData(c: Context): Boolean {
+    fun onWifi(c: Context): Boolean {
         val cm = c.getSystemService(android.net.ConnectivityManager::class.java)
         val caps = cm.activeNetwork?.let { cm.getNetworkCapabilities(it) } ?: return false
-        return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) &&
-            !caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
+        return caps.hasTransport(android.net.NetworkCapabilities.TRANSPORT_WIFI)
     }
 
-    /** Reconnect check of the current network (GuardService: on mobile data while on Automatic). */
+    /** Wi-Fi turned off or disconnected, or a non-Wi-Fi network: leave Automatic and put the filter back now. */
+    @Synchronized
+    fun enforce(c: Context) {
+        lastKey = null
+        if (fallbackActive(c)) exitFallback(c)
+    }
+
+    /** Reconnect check of the current network (GuardService: on Wi-Fi while on Automatic). */
     fun checkNow(c: Context) {
         val cm = c.getSystemService(android.net.ConnectivityManager::class.java)
         val n = cm.activeNetwork ?: return
@@ -124,7 +132,7 @@ object SmartDns {
         PrivateDns.write(c, null)
         Notify.post(
             c, Channel.NETWORK, NOTIFY_ID, "Private DNS on Automatic",
-            "The filter's DNS can't be reached right now. It's re-checked every few minutes and comes back on its own.",
+            "This Wi-Fi blocks the filter's DNS. It's re-checked every 3 minutes, and the filter comes back as soon as you leave this Wi-Fi.",
             ongoing = true,
         )
     }
