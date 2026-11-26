@@ -77,7 +77,46 @@ object SearchBlocker {
     @Volatile private var cache: Set<String>? = null
 
     fun keywords(c: Context): Set<String> = cache ?: Prefs.getSet(c, Prefs.K_SEARCH_KEYWORDS).also { cache = it }
-    fun active(c: Context) = keywords(c).isNotEmpty()
+
+    // ---- blocked sites in every browser (your list + active screen-time sites) ----
+    @Volatile private var siteCache: Set<String>? = null
+
+    /** Your blocked sites plus sites of an active screen-time schedule, lowercase. */
+    fun sites(c: Context): Set<String> =
+        siteCache ?: (Prefs.domains(c) + Prefs.stSites(c)).map { it.lowercase() }.toSet().also { siteCache = it }
+
+    /** On while there are keywords or blocked sites (the accessibility service, force-stop protection). */
+    fun active(c: Context) = !Mdm.releasing && (keywords(c).isNotEmpty() || sites(c).isNotEmpty())
+
+    /** The host shown in an address bar ("https://www.Example.com/x" or "example.com/x" → "example.com"), or null. */
+    fun hostOf(text: String): String? {
+        // First word only: Chrome shows "example.org. Connection is not secure" in its address bar.
+        var t = text.trim().lowercase().split(Regex("\\s+")).firstOrNull().orEmpty()
+        if (t.isEmpty()) return null
+        t = t.substringAfter("://")
+        t = t.substringBefore('/').substringBefore('?').substringBefore('#').substringBefore(':').trimEnd('.')
+        t = t.removePrefix("www.")
+        return t.takeIf { Regex("^[a-z0-9-]+(\\.[a-z0-9-]+)+$").matches(it) }
+    }
+
+    /** The blocked site [text]'s host belongs to (the site itself or a subdomain), or null. */
+    fun blockedSite(text: String, sites: Set<String>): String? {
+        var h = hostOf(text) ?: return null
+        while (true) {
+            if (h in sites) return h
+            val i = h.indexOf('.')
+            if (i < 0 || h.indexOf('.', i + 1) < 0) return null // stop at the registrable part ("example.com")
+            h = h.substring(i + 1)
+        }
+    }
+
+    /** The site list changed (Websites, screen time, profile import): refresh the service and its protection. */
+    fun sitesChanged(c: Context) {
+        siteCache = null
+        runCatching { ensureService(c) }
+        runCatching { applyUserControl(c) }
+        GuardService.refresh(c)
+    }
 
     /** Adds keywords (comma, semicolon or line separated). Returns how many were new. */
     fun add(c: Context, input: String): Int {
@@ -94,17 +133,22 @@ object SearchBlocker {
         changed(c)
     }
 
-    /** Danger zone → Release all: drop every keyword and switch the service off while still Device Owner. */
+    /**
+     * Danger zone → Release all: switch the service and the force-stop protection off while still Device Owner.
+     * Keywords and sites stay saved (Mdm.releasing makes [active] false meanwhile).
+     */
     fun clearAll(c: Context) {
-        Prefs.setSet(c, Prefs.K_SEARCH_KEYWORDS, emptySet())
         cache = null
+        siteCache = null
         runCatching { ensureService(c) }
         runCatching { applyUserControl(c) }
+        runCatching { SearchBlockService.instance?.disableSelf() } // off even without the secure-settings grant
     }
 
     /** After the list changed here or by a profile import: refresh the service, Chrome's profile and GuardService. */
     fun changed(c: Context) {
         cache = null
+        siteCache = null
         runCatching { ensureService(c) }
         runCatching { applyUserControl(c) }
         runCatching { ChromePolicy.apply(c) } // always: also removes the rules of keywords just deleted
@@ -207,6 +251,9 @@ class SearchBlockService : AccessibilityService() {
         private val BROWSER_HINTS = listOf("url", "search", "query", "omnibox", "address", "location", "title")
         /** Other apps (YouTube, Play Store, Instagram, Facebook, Telegram…): search boxes and in-app browser address bars. */
         private val APP_HINTS = listOf("search", "query", "url", "address", "omnibox")
+        private val ADDRESS_HINTS = listOf("url", "omnibox", "omnibar", "address", "location")
+        /** Neutral pages a browser tab is sent to; the first one not on the blocked list is used. */
+        private val NEUTRAL_PAGES = listOf("https://www.google.com", "https://duckduckgo.com", "about:blank")
         private const val MAX_NODES = 300
         private const val SCAN_GAP_MS = 400L
         private const val SYSTEM_UI = "com.android.systemui"
@@ -222,7 +269,6 @@ class SearchBlockService : AccessibilityService() {
         )
         private const val TOP_BAR_FRACTION = 0.22
         private const val TYPE_PAUSE_MS = 1500L
-        private const val NEUTRAL_PAGE = "https://www.google.com"
     }
 
     private val worker = HandlerThread("search-block").apply { start() }
@@ -238,8 +284,20 @@ class SearchBlockService : AccessibilityService() {
     @Volatile private var lastTypeText: String? = null
     @Volatile private var lastTypeField: AccessibilityNodeInfo? = null
 
-    /** A keyword found on screen; [field] is the editable box holding it (cleared instead of leaving the app). */
-    private class Hit(val keyword: String, val field: AccessibilityNodeInfo?)
+    /**
+     * A keyword found on screen; [field] is the editable box holding it (cleared instead of leaving the app).
+     * [site]: a blocked site is open in the address bar (never cleared: the page is left instead).
+     */
+    private class Hit(val keyword: String, val field: AccessibilityNodeInfo?, val site: Boolean = false)
+
+    /** Nothing to do: no keywords or sites, Release all running, or no longer Device Owner (checked every 10 s). */
+    private fun nothingToBlock(): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (now - ownerCheckedAt > 10_000) { owner = runCatching { Mdm(this).isOwner }.getOrDefault(false); ownerCheckedAt = now }
+        return !owner || !SearchBlocker.active(this)
+    }
+    @Volatile private var owner = true
+    @Volatile private var ownerCheckedAt = 0L
 
     override fun onServiceConnected() {
         instance = this
@@ -266,8 +324,8 @@ class SearchBlockService : AccessibilityService() {
     override fun onAccessibilityEvent(e: AccessibilityEvent) {
         val pkg = e.packageName?.toString() ?: return
         if (pkg in ignored) return
+        if (nothingToBlock()) return
         val kws = SearchBlocker.keywords(this)
-        if (kws.isEmpty()) return
         if (SystemClock.elapsedRealtime() - lastBlock < 1500) return // just acted: let Back finish
         val browser = pkg in browsers
         when (e.eventType) {
@@ -324,8 +382,9 @@ class SearchBlockService : AccessibilityService() {
 
     /** The keyword in [pkg]'s focused window, or null. Never reads a window of another app. */
     private fun findHit(pkg: String): Hit? {
+        if (nothingToBlock()) return null
         val kws = SearchBlocker.keywords(this)
-        if (kws.isEmpty()) return null
+        val sites = SearchBlocker.sites(this)
         val root = rootInActiveWindow ?: return null
         val rp = root.packageName?.toString() ?: return null
         if (rp != pkg || rp in ignored) return null
@@ -345,6 +404,8 @@ class SearchBlockService : AccessibilityService() {
         val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
         var seen = 0
         var readOnly: Hit? = null // a read-only match; an editable box holding a keyword is preferred (it can be erased)
+        var siteInApp: Hit? = null // apps: a blocked site in an address bar, confirmed only if the window shows a web page
+        var sawWeb = false
         while (queue.isNotEmpty() && seen < MAX_NODES) {
             val n = queue.removeFirst(); seen++
             val id = n.viewIdResourceName?.substringAfter('/')?.lowercase().orEmpty()
@@ -353,15 +414,26 @@ class SearchBlockService : AccessibilityService() {
             val field = if (browser) idHit || n.isEditable || hintSaysSearch(n)
             // Apps: the search box / the query in the top bar, never suggestion, history or result rows.
             else (idHit || hintSaysSearch(n) || inTopBar) && !isInList(n)
+            // A blocked site open in an address bar (browsers, in-app browsers); not while an address is being typed.
+            // Real address bars only: never suggestion / history / download rows or page titles.
+            val addressBar = !isInList(n) && (ADDRESS_HINTS.any { it in id } ||
+                (browser && n.isEditable && ("search" in id || "query" in id)))
+            if (addressBar && sites.isNotEmpty() && !(n.isFocused && typingNow())) typedText(n)?.let { t ->
+                SearchBlocker.blockedSite(t, sites)?.let {
+                    if (browser) return Hit(it, null, site = true)
+                    if (siteInApp == null) siteInApp = Hit(it, null, site = true)
+                }
+            }
             if (field) typedText(n)?.let { t ->
                 SearchBlocker.match(t, kws, editing = n.isEditable && n.isFocused && typingNow())?.let { k ->
                     if (n.isEditable) return Hit(k, n)
                     if (readOnly == null) readOnly = Hit(k, null)
                 }
             }
-            if (isWebContent(n)) continue
+            if (isWebContent(n)) { sawWeb = true; continue }
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
+        if (siteInApp != null && sawWeb) return siteInApp
         return readOnly
     }
 
@@ -417,17 +489,27 @@ class SearchBlockService : AccessibilityService() {
      */
     private fun block(hit: Hit, pkg: String) {
         lastBlock = SystemClock.elapsedRealtime()
-        // Being typed (focused box): erase it, the app stays where it is. Otherwise (a results page): go Back.
-        val cleared = hit.field != null && (hit.field.isFocused || pkg !in browsers) && clear(hit.field)
-        android.util.Log.i("SearchBlock", "hit in $pkg field=${hit.field?.className}/${hit.field?.viewIdResourceName} cleared=$cleared")
-        if (!cleared) performGlobalAction(GLOBAL_ACTION_BACK)
+        // Being typed (focused box): erase it, the app stays where it is. Otherwise (a results page, a blocked site): Back.
+        val cleared = !hit.site && hit.field != null && (hit.field.isFocused || pkg !in browsers) && clear(hit.field)
+        // A blocked site in a browser: send the tab to a neutral page (Back could exit the browser and the site would
+        // come back when it's reopened).
+        val navigated = hit.site && pkg in browsers && navigateAway(pkg)
+        android.util.Log.i("SearchBlock", "hit in $pkg site=${hit.site} field=${hit.field?.viewIdResourceName} cleared=$cleared navigated=$navigated")
+        if (!cleared && !navigated) performGlobalAction(GLOBAL_ACTION_BACK)
+        if (hit.site && pkg !in browsers) { // in-app browser: one Back closes its page; never more
+            Notify.post(this, Channel.BLOCKED, SearchBlocker.NOTIFY_ID, "Site blocked", "This site is on the blocked list (${Apps.label(this, pkg)}).")
+            return
+        }
         bg.postDelayed({ followUp(pkg, last = false) }, 700)
         bg.postDelayed({ followUp(pkg, last = true) }, 1500)
         Notify.post(
             // The keyword itself isn't shown: the list is private (hidden behind the PIN in DeviceGuard).
-            this, Channel.BLOCKED, SearchBlocker.NOTIFY_ID, "Search blocked",
-            (if (cleared) "The search was cleared: it contains a blocked keyword" else "It contains a blocked keyword") +
-                " (${Apps.label(this, pkg)}).",
+            this, Channel.BLOCKED, SearchBlocker.NOTIFY_ID, if (hit.site) "Site blocked" else "Search blocked",
+            when {
+                hit.site -> "This site is on the blocked list"
+                cleared -> "The search was cleared: it contains a blocked keyword"
+                else -> "It contains a blocked keyword"
+            } + " (${Apps.label(this, pkg)}).",
         )
     }
 
@@ -440,7 +522,7 @@ class SearchBlockService : AccessibilityService() {
         val h = runCatching { findHit(pkg) }.getOrNull() ?: return
         val browser = pkg in browsers
         val ok = when {
-            h.field != null && (h.field.isFocused || !browser) && clear(h.field) -> "cleared"
+            !h.site && h.field != null && (h.field.isFocused || !browser) && clear(h.field) -> "cleared"
             browser && navigateAway(pkg) -> "navigated"
             else -> { performGlobalAction(GLOBAL_ACTION_BACK); "back" }
         }
@@ -455,8 +537,10 @@ class SearchBlockService : AccessibilityService() {
         val bar = findAddressBar(root) ?: return false
         bar.performAction(AccessibilityNodeInfo.ACTION_CLICK)
         bar.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        val sites = SearchBlocker.sites(this)
+        val page = NEUTRAL_PAGES.firstOrNull { SearchBlocker.blockedSite(it, sites) == null } ?: return false
         val args = android.os.Bundle().apply {
-            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, NEUTRAL_PAGE)
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, page)
         }
         if (!bar.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
         bar.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
@@ -469,7 +553,7 @@ class SearchBlockService : AccessibilityService() {
         while (queue.isNotEmpty() && seen < MAX_NODES) {
             val n = queue.removeFirst(); seen++
             val id = n.viewIdResourceName?.substringAfter('/')?.lowercase().orEmpty()
-            if (n.isEditable && listOf("url", "omnibox", "address", "location", "search").any { it in id }) return n
+            if (n.isEditable && listOf("url", "omnibox", "omnibar", "address", "location", "search").any { it in id }) return n
             if (isWebContent(n)) continue
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }

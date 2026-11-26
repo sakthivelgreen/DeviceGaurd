@@ -170,8 +170,8 @@ class GuardService : Service() {
     private val a11yObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             if (runCatching { SearchBlocker.ensureService(this@GuardService) }.getOrDefault(false))
-                Notify.post(this@GuardService, Channel.BLOCKED, SearchBlocker.NOTIFY_ID + 1, "Search keyword blocker is back on",
-                    "It can't be turned off in Accessibility settings. Remove keywords in DeviceGuard → Websites (filter guard).")
+                Notify.post(this@GuardService, Channel.BLOCKED, SearchBlocker.NOTIFY_ID + 1, "Website and search blocker is back on",
+                    "It can't be turned off in Accessibility settings. Remove blocked sites or keywords in DeviceGuard → Websites (filter guard).")
         }
     }
 

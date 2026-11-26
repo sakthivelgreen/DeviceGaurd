@@ -525,6 +525,12 @@ Dashboard → **Settings**:
 - **Set up another phone (QR code):** the APK link is filled in with the newest GitHub release (`https://github.com/sakthivelgreen/DeviceGaurd/releases/latest/download/DeviceGuard.apk`); add Wi-Fi if needed, then *Show QR*. On the new phone: welcome screen → tap 6 times → scan. Android downloads DeviceGuard, checks its signature and makes it Device Owner. Then set the PIN and import your profile. The QR code carries this app's signing-key fingerprint, so only your APK is accepted.
 - **App updates:** repository (default `sakthivelgreen/DeviceGaurd`, public, so no token). The check uses github.com's `releases/latest` redirect, not GitHub's API (which allows only 60 calls an hour per network); only APKs signed with this app's key, newer than the installed version and matching the `build-<versionCode>` tag are installed. *Check for updates now*, or turn on *Check daily (auto-install)*. Updates install silently as Device Owner. Debug builds never install a release (the development phone keeps its ADB escape hatch).
 
+### Blocked sites in every browser
+Your blocked-site list (Websites → Your blocked sites, plus sites of an active screen-time schedule) is blocked in **every browser**, not only Chrome:
+- **Chrome** (and any browser that accepts Chromium policies) gets the list in its policy profile.
+- **Every other browser** (1DM, Firefox, Edge, Brave, Samsung, vivo, DuckDuckGo…) is covered by the same accessibility service as the keyword blocker: when the **address bar** shows a blocked site or one of its subdomains, the tab is sent to a neutral page (google.com, or duckduckgo.com / about:blank if Google is blocked) and a "Site blocked" notification appears. Only real address bars are read (not suggestion, history or download rows, not titles); in-app browsers are checked only while they show a web page, and get one Back.
+- The service, its auto re-enable and the force-stop protection now run whenever there are blocked sites **or** keywords.
+
 ### Search keyword blocker
 Websites → **Search keyword blocker**: type one or more words (comma separated) → **Block these keywords**.
 
@@ -887,5 +893,6 @@ Create `res/drawable/ic_name.xml` as a 24dp vector with a white fill (copy any `
 | 2026-11-26 | Keyword blocker: the keyword list is hidden behind the admin PIN (Show keywords); the notification no longer names the keyword. |
 | 2026-11-26 | **Keyword blocker in apps + browser profiles:** searches in YouTube, Play Store, Instagram, Facebook, Telegram, X and other apps' search boxes are blocked; the search box is cleared instead of closing the app (no reopen loop); suggestion rows and placeholders ignored; live-result apps checked after a 1.5 s pause. The policy profile goes to every browser that accepts Chromium policies. Reviewed (18 agents, 4 confirmed findings fixed) and tested on the phone in the Play Store. |
 | 2026-11-26 | Keyword blocker: no more Back-then-Home closing loop. Being typed → erased; results page → Back, then the browser tab is navigated to google.com; never Home. Editable boxes preferred over read-only toolbar text (Chrome). Decision log lines (tag `SearchBlock`, no keywords) for troubleshooting. Tested in Chrome, Google app, 1DM, Play Store. |
+| 2026-11-26 | **Blocked sites in every browser:** only Chrome accepts the policy profile, so 1DM and other browsers could open blocked sites. The accessibility blocker now reads each browser's address bar and sends a blocked site's tab to a neutral page. Reviewed (20 agents, 13 confirmed findings fixed: navigate before Back, neutral page never blocked, real address bars only, in-app browsers only with a web page, DuckDuckGo omnibar, Release all turns the service off itself). Tested on the phone: example.org blocked in 1DM and Chrome, example.net allowed. |
 
 © Sakthivel J

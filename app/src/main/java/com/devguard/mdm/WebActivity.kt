@@ -205,7 +205,13 @@ class WebActivity : BaseActivity() {
 
             // ---- Blocked-site list ----
             card("Your blocked sites") {
-            text("Used by the Chrome rules. Blocking a domain also blocks its subdomains.", 13f).alpha = 0.8f
+            text("Blocked in every browser (Chrome rules in Chrome; DeviceGuard's blocker reads the address bar of 1DM, Firefox, Edge and others). Blocking a domain also blocks its subdomains.", 13f).alpha = 0.8f
+            if (SearchBlocker.active(context) && !SearchBlocker.serviceEnabled(context)) {
+                text("⚠️ The blocker isn't running in other browsers: its accessibility service is off.", 13f, bold = true, color = Palette.ORANGE)
+                if (!PrivateDns.canWrite(context)) button("Open Accessibility settings", outlined = true) {
+                    runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
+                }
+            }
             val input = EditText(context).apply {
                 hint = "example.com"
                 isSingleLine = true
@@ -322,7 +328,7 @@ class WebActivity : BaseActivity() {
             }
             text("Enforced inside Chrome through its enterprise policies. Restart Chrome after changes; check them at chrome://policy.", 13f).alpha = 0.8f
             val chromeOn = Prefs.getFlag(context, Prefs.CHROME_ON)
-            switchRow("Enforce in Chrome", "Blocks your site list in Chrome", chromeOn, owner) { _, on ->
+            switchRow("Enforce in Chrome", "Chrome's own rules for your list (every browser is also covered by DeviceGuard's address-bar blocker)", chromeOn, owner) { _, on ->
                 guardOff("turn off the Chrome rules", on) {
                     Prefs.setFlag(this@WebActivity, Prefs.CHROME_ON, on)
                     ChromePolicy.apply(this@WebActivity)?.let { toast(it) }

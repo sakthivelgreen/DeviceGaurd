@@ -56,6 +56,25 @@ class SearchBlockerTest {
         assertEquals("ass", SearchBlocker.match("ass", k))                      // not editing: submitted text
     }
 
+    @Test fun readsTheHostFromAddressBars() {
+        assertEquals("example.com", SearchBlocker.hostOf("https://www.Example.com/path?x=1"))
+        assertEquals("m.youtube.com", SearchBlocker.hostOf("m.youtube.com/watch"))
+        assertEquals("example.com", SearchBlocker.hostOf("example.com:8080"))
+        assertNull(SearchBlocker.hostOf("best casino near me"))   // a search, not an address
+        assertEquals("example.org", SearchBlocker.hostOf("example.org. Connection is not secure")) // Chrome
+        assertNull(SearchBlocker.hostOf("Search"))
+    }
+
+    @Test fun blocksASiteAndItsSubdomainsOnly() {
+        val sites = setOf("instagram.com", "example.co.in")
+        assertEquals("instagram.com", SearchBlocker.blockedSite("https://www.instagram.com/reels", sites))
+        assertEquals("instagram.com", SearchBlocker.blockedSite("help.instagram.com", sites))
+        assertEquals("example.co.in", SearchBlocker.blockedSite("a.example.co.in/x", sites))
+        assertNull(SearchBlocker.blockedSite("notinstagram.com", sites))
+        assertNull(SearchBlocker.blockedSite("instagram.com.evil.net", sites))
+        assertNull(SearchBlocker.blockedSite("google.com/search?q=instagram.com", sites))
+    }
+
     @Test fun nothingToMatch() {
         assertNull(SearchBlocker.match("anything", emptyList()))
         assertNull(SearchBlocker.match("", kws("casino")))
