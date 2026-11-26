@@ -222,6 +222,7 @@ class SearchBlockService : AccessibilityService() {
         )
         private const val TOP_BAR_FRACTION = 0.22
         private const val TYPE_PAUSE_MS = 1500L
+        private const val NEUTRAL_PAGE = "https://www.google.com"
     }
 
     private val worker = HandlerThread("search-block").apply { start() }
@@ -343,6 +344,7 @@ class SearchBlockService : AccessibilityService() {
         // Breadth-first so the toolbar is reached first; page content (WebView) is not entered.
         val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
         var seen = 0
+        var readOnly: Hit? = null // a read-only match; an editable box holding a keyword is preferred (it can be erased)
         while (queue.isNotEmpty() && seen < MAX_NODES) {
             val n = queue.removeFirst(); seen++
             val id = n.viewIdResourceName?.substringAfter('/')?.lowercase().orEmpty()
@@ -352,12 +354,15 @@ class SearchBlockService : AccessibilityService() {
             // Apps: the search box / the query in the top bar, never suggestion, history or result rows.
             else (idHit || hintSaysSearch(n) || inTopBar) && !isInList(n)
             if (field) typedText(n)?.let { t ->
-                SearchBlocker.match(t, kws, editing = n.isEditable && n.isFocused && typingNow())?.let { return Hit(it, n.takeIf { n.isEditable }) }
+                SearchBlocker.match(t, kws, editing = n.isEditable && n.isFocused && typingNow())?.let { k ->
+                    if (n.isEditable) return Hit(k, n)
+                    if (readOnly == null) readOnly = Hit(k, null)
+                }
             }
             if (isWebContent(n)) continue
             for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
         }
-        return null
+        return readOnly
     }
 
     /** The node's real text, or null if it's empty or only its placeholder (hint) is showing. */
@@ -412,10 +417,12 @@ class SearchBlockService : AccessibilityService() {
      */
     private fun block(hit: Hit, pkg: String) {
         lastBlock = SystemClock.elapsedRealtime()
-        val cleared = hit.field != null && clear(hit.field)
+        // Being typed (focused box): erase it, the app stays where it is. Otherwise (a results page): go Back.
+        val cleared = hit.field != null && (hit.field.isFocused || pkg !in browsers) && clear(hit.field)
+        android.util.Log.i("SearchBlock", "hit in $pkg field=${hit.field?.className}/${hit.field?.viewIdResourceName} cleared=$cleared")
         if (!cleared) performGlobalAction(GLOBAL_ACTION_BACK)
-        bg.postDelayed({ followUp(pkg, last = false) }, 600)
-        bg.postDelayed({ followUp(pkg, last = true) }, 1300)
+        bg.postDelayed({ followUp(pkg, last = false) }, 700)
+        bg.postDelayed({ followUp(pkg, last = true) }, 1500)
         Notify.post(
             // The keyword itself isn't shown: the list is private (hidden behind the PIN in DeviceGuard).
             this, Channel.BLOCKED, SearchBlocker.NOTIFY_ID, "Search blocked",
@@ -424,10 +431,49 @@ class SearchBlockService : AccessibilityService() {
         )
     }
 
+    /**
+     * Still showing the keyword after the first step: erase a box that's being typed in; in a browser, send the
+     * same tab to a neutral page (so the results don't come back when the browser is reopened); otherwise Back.
+     * Home is never used: it would keep the app on the same screen, and reopening it would block again in a loop.
+     */
     private fun followUp(pkg: String, last: Boolean) {
         val h = runCatching { findHit(pkg) }.getOrNull() ?: return
-        if (h.field != null && clear(h.field)) return
-        performGlobalAction(if (last) GLOBAL_ACTION_HOME else GLOBAL_ACTION_BACK)
+        val browser = pkg in browsers
+        val ok = when {
+            h.field != null && (h.field.isFocused || !browser) && clear(h.field) -> "cleared"
+            browser && navigateAway(pkg) -> "navigated"
+            else -> { performGlobalAction(GLOBAL_ACTION_BACK); "back" }
+        }
+        android.util.Log.i("SearchBlock", "follow-up last=$last field=${h.field?.viewIdResourceName} action=$ok")
+    }
+
+    /** Puts a neutral page in the browser's address bar and presses Enter (Android 11+ IME action). */
+    private fun navigateAway(pkg: String): Boolean = runCatching {
+        if (Build.VERSION.SDK_INT < 30) return false
+        val root = rootInActiveWindow ?: return false
+        if (root.packageName?.toString() != pkg) return false
+        val bar = findAddressBar(root) ?: return false
+        bar.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+        bar.performAction(AccessibilityNodeInfo.ACTION_FOCUS)
+        val args = android.os.Bundle().apply {
+            putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, NEUTRAL_PAGE)
+        }
+        if (!bar.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, args)) return false
+        bar.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_IME_ENTER.id)
+    }.getOrDefault(false)
+
+    /** The browser's editable address bar (by id), searched breadth-first outside page content. */
+    private fun findAddressBar(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>().apply { add(root) }
+        var seen = 0
+        while (queue.isNotEmpty() && seen < MAX_NODES) {
+            val n = queue.removeFirst(); seen++
+            val id = n.viewIdResourceName?.substringAfter('/')?.lowercase().orEmpty()
+            if (n.isEditable && listOf("url", "omnibox", "address", "location", "search").any { it in id }) return n
+            if (isWebContent(n)) continue
+            for (i in 0 until n.childCount) n.getChild(i)?.let { queue.add(it) }
+        }
+        return null
     }
 
     /** Erases the text of an editable box. False if the app refused (then Back is used instead). */
