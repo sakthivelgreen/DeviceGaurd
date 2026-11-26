@@ -1,6 +1,4 @@
 <resources>
     <string name="app_name">DeviceGuard MDM</string>
     <string name="author">Sakthivel J</string>
-    <string name="search_block_label">DeviceGuard search blocker</string>
-    <string name="search_block_desc">Blocks web searches that contain a keyword blocked by the administrator. Reads only the address and search box of browsers.</string>
 </resources>

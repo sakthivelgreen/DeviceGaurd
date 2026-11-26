@@ -29,10 +29,9 @@ class GuardService : Service() {
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(c: Context, i: Intent) {
             val pkg = i.data?.schemeSpecificPart ?: return
-            if (i.action == Intent.ACTION_PACKAGE_CHANGED) { SearchBlockService.instance?.configure(); return } // re-enabled browser
+            if (i.action == Intent.ACTION_PACKAGE_CHANGED) return
             if (Mdm.releasing) return // Release all is unhiding apps: don't re-hide or uninstall them
             if (AppControl.isIgnored(pkg)) return // unhide after a force stop, not a real install
-            SearchBlockService.instance?.configure() // a new browser is watched by the keyword blocker at once
             if (Blocklist.onInstalled(c, pkg)) return
             if (pkg == ChromePolicy.CHROME || ChromePolicy.isBrowser(c, pkg)) runCatching { ChromePolicy.apply(c) } // new browser gets the policy profile
             if (ChromePolicy.onInstalled(c, pkg)) return
@@ -66,11 +65,7 @@ class GuardService : Service() {
             contentResolver.registerContentObserver(android.provider.Settings.Global.getUriFor(key), false, timeObserver)
         }
         WebFilter.removeLegacyVpn(this) // R-03: clear an always-on VPN left by an older version
-        // Search keyword blocker: keep its accessibility service on; switch it back on if anyone turns it off.
-        for (key in listOf(android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES, android.provider.Settings.Secure.ACCESSIBILITY_ENABLED)) {
-            contentResolver.registerContentObserver(android.provider.Settings.Secure.getUriFor(key), false, a11yObserver)
-        }
-        runCatching { SearchBlocker.ensureService(this) }
+        runCatching { SearchBlocker.removeService(this) } // the accessibility service was removed
         PrivateDns.enforce(this)
 
         // Smart DNS: check every network the moment it connects or changes.
@@ -167,14 +162,6 @@ class GuardService : Service() {
         }
     }
 
-    private val a11yObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
-        override fun onChange(selfChange: Boolean) {
-            if (runCatching { SearchBlocker.ensureService(this@GuardService) }.getOrDefault(false))
-                Notify.post(this@GuardService, Channel.BLOCKED, SearchBlocker.NOTIFY_ID + 1, "Website and search blocker is back on",
-                    "It can't be turned off in Accessibility settings. Remove blocked sites or keywords in DeviceGuard → Websites (filter guard).")
-        }
-    }
-
     private val timeObserver = object : android.database.ContentObserver(android.os.Handler(android.os.Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
             work.execute {
@@ -200,7 +187,6 @@ class GuardService : Service() {
         runCatching { unregisterReceiver(receiver) }
         runCatching { contentResolver.unregisterContentObserver(dnsObserver) }
         runCatching { contentResolver.unregisterContentObserver(timeObserver) }
-        runCatching { contentResolver.unregisterContentObserver(a11yObserver) }
         runCatching { connectivity.unregisterNetworkCallback(netCallback) }
         runCatching { unregisterReceiver(wifiReceiver) }
         runCatching { unregisterReceiver(screenReceiver) }

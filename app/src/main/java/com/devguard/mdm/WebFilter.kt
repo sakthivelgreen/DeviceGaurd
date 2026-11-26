@@ -63,5 +63,5 @@ object WebFilter {
 /** Called whenever the blocked-site list changes: update every enforcement layer. */
 fun onDomainsChanged(c: Context) {
     if (Prefs.getFlag(c, Prefs.CHROME_ON)) runCatching { ChromePolicy.apply(c) }
-    SearchBlocker.sitesChanged(c) // blocked in every browser by the address-bar blocker too
+    SearchBlocker.sitesChanged(c) // force-stop protection follows the site list
 }

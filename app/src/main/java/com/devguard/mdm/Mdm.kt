@@ -101,8 +101,8 @@ class Mdm(private val c: Context) {
         runCatching { Secrets.migrate(c) } // encrypt secrets stored in plain text by older versions (S-03)
         runCatching { WebFilter.removeLegacyVpn(c) } // the VPN filter was removed (R-03)
         runCatching { WebFilter.removeNextDns(c) } // NextDNS support was removed
-        runCatching { SearchBlocker.ensureService(c) } // keyword blocker on while there are keywords
-        runCatching { SearchBlocker.applyUserControl(c) } // ...and DeviceGuard can't be force-stopped meanwhile
+        runCatching { SearchBlocker.removeService(c) } // the accessibility service was removed (payment apps refused it)
+        runCatching { SearchBlocker.applyUserControl(c) } // DeviceGuard can't be force-stopped while sites / keywords exist
         runCatching { ChromePolicy.apply(c) } // Chrome profile re-written from settings (self-repairing; drops stale rules)
         runCatching { Updater.removeLegacyToken(c) } // public repo: no GitHub token needed
         if (Build.VERSION.SDK_INT >= 33) runCatching {
@@ -124,7 +124,7 @@ class Mdm(private val c: Context) {
             WebFilter.removeLegacyVpn(c)
             Approval.disable(c)
             ChromePolicy.clear(c)
-            runCatching { SearchBlocker.clearAll(c) } // keyword blocker off while still Device Owner
+            runCatching { SearchBlocker.clearAll(c) } // force-stop protection off while still Device Owner
             runCatching { PrivateDns.apply(c, null) }
             RESTRICTION_GROUPS.flatMap { it.second }.forEach { r -> runCatching { dpm.clearUserRestriction(admin, r.key) } }
             runCatching { dpm.setCameraDisabled(admin, false) }

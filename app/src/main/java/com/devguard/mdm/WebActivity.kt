@@ -205,13 +205,7 @@ class WebActivity : BaseActivity() {
 
             // ---- Blocked-site list ----
             card("Your blocked sites") {
-            text("Blocked in every browser (Chrome rules in Chrome; DeviceGuard's blocker reads the address bar of 1DM, Firefox, Edge and others). Blocking a domain also blocks its subdomains.", 13f).alpha = 0.8f
-            if (SearchBlocker.active(context) && !SearchBlocker.serviceEnabled(context)) {
-                text("⚠️ The blocker isn't running in other browsers: its accessibility service is off.", 13f, bold = true, color = Palette.ORANGE)
-                if (!PrivateDns.canWrite(context)) button("Open Accessibility settings", outlined = true) {
-                    runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-                }
-            }
+            text("Blocked by the Private DNS filter and by Chrome rules (in Chrome and every browser that accepts the policy profile). Blocking a domain also blocks its subdomains.", 13f).alpha = 0.8f
             val input = EditText(context).apply {
                 hint = "example.com"
                 isSingleLine = true
@@ -250,36 +244,28 @@ class WebActivity : BaseActivity() {
 
             }
 
-            // ---- Search keyword blocker (every browser) ----
+            // ---- Search keyword blocker (Chrome policy) ----
             card("Search keyword blocker") {
                 text(
-                    "A web search, an address typed in any browser, or a search in apps (YouTube, Play Store, Instagram, Facebook, " +
-                        "Telegram…) that contains one of these words is stopped: the app goes back " +
-                        "and you get a notification. Whole words only (\"ass\" doesn't block \"class\"); end a word with * to also block " +
-                        "longer words (porn* blocks pornography). Chrome also refuses searches that start with a keyword. " +
-                        "Removing a keyword needs the filter guard.",
+                    "Google, Bing, DuckDuckGo, Yahoo and YouTube searches that are one of these words or start with it are refused " +
+                        "in Chrome and every browser that accepts the policy profile (see Chrome rules). End a word with * to also " +
+                        "block longer words (porn* blocks pornography). Removing a keyword needs the filter guard.",
                     13f,
                 ).alpha = 0.8f
                 val kws = SearchBlocker.keywords(context).sorted()
                 if (kws.isNotEmpty()) {
-                    val on = SearchBlocker.serviceEnabled(context)
+                    val targets = ChromePolicy.lastTargets(context)
+                    val on = targets.isNotEmpty()
                     text(
-                        if (on) "✅ On in every browser (${SearchBlocker.browserPackages(context).size} apps watched)"
-                        else "⚠️ Not running: the accessibility service is off",
+                        if (on) "✅ On in: " + targets.joinToString { Apps.label(context, it) }
+                        else "⚠️ Not applied: no browser here accepts the policy profile (install Chrome)",
                         13f, bold = true, color = if (on) Palette.GREEN else Palette.ORANGE,
                     )
                     val sites = if (Prefs.getFlag(context, Prefs.CHROME_ON)) Prefs.domains(context).size + Prefs.stSites(context).size else 0
                     val rules = SearchBlocker.chromeRules(context).size
                     if (sites + rules > ChromePolicy.MAX_BLOCKLIST) text(
-                        "Chrome layer: Chrome takes 1000 rules, so only some keywords are in Chrome's own list. " +
-                            "The accessibility blocker still covers all of them.", 12f, color = Palette.ORANGE,
+                        "Chrome takes 1000 rules, so only some keywords fit (your blocked sites come first).", 12f, color = Palette.ORANGE,
                     )
-                    if (!on && !PrivateDns.canWrite(context)) {
-                        text("DeviceGuard can switch it on itself after the one-time setup command (Family-safe filter card). Or turn it on by hand:", 12f).alpha = 0.7f
-                        button("Open Accessibility settings", outlined = true) {
-                            runCatching { startActivity(android.content.Intent(android.provider.Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-                        }
-                    }
                 }
                 val input = EditText(context).apply {
                     hint = "word, or several separated by commas"
@@ -322,13 +308,13 @@ class WebActivity : BaseActivity() {
                 if (got.isNotEmpty()) text("Policy profile installed in: " + got.joinToString { Apps.label(context, it) }, 13f, bold = true)
                 if (ignore.isNotEmpty()) text(
                     "These browsers don't accept policies (Android lets each browser decide): " + ignore.joinToString { Apps.label(context, it) } +
-                        ". The search keyword blocker still covers them; Allow only Chrome hides them.",
+                        ". Blocked sites and keywords aren't enforced in them; Allow only Chrome hides them.",
                     12f,
                 ).alpha = 0.7f
             }
             text("Enforced inside Chrome through its enterprise policies. Restart Chrome after changes; check them at chrome://policy.", 13f).alpha = 0.8f
             val chromeOn = Prefs.getFlag(context, Prefs.CHROME_ON)
-            switchRow("Enforce in Chrome", "Chrome's own rules for your list (every browser is also covered by DeviceGuard's address-bar blocker)", chromeOn, owner) { _, on ->
+            switchRow("Enforce in Chrome", "Chrome's own rules for your list and the search keywords", chromeOn, owner) { _, on ->
                 guardOff("turn off the Chrome rules", on) {
                     Prefs.setFlag(this@WebActivity, Prefs.CHROME_ON, on)
                     ChromePolicy.apply(this@WebActivity)?.let { toast(it) }

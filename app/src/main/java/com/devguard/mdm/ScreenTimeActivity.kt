@@ -246,7 +246,7 @@ class ScreenTimeActivity : BaseActivity() {
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_URI
         }
         col.addView(sites)
-        col.text("Websites are blocked in every browser while the schedule is on.", 11f).alpha = 0.6f
+        col.text("Websites are blocked in Chrome (and browsers that accept its rules) while the schedule is on.", 11f).alpha = 0.6f
 
         val dlg = MaterialAlertDialogBuilder(this).setTitle(if (existing == null) "New schedule" else "Edit schedule")
             .setView(android.widget.ScrollView(this).apply { addView(col) })

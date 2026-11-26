@@ -11,7 +11,7 @@ import android.os.Bundle
  * Website rules enforced through browsers' managed (enterprise) policies, written as Device Owner. Like a PC policy,
  * but on Android a browser only obeys it if it reads Android managed configurations: the profile goes to Chrome and to
  * every installed browser that declares the Chromium policies ([policyBrowsers]); each gets only the keys it declares.
- * Browsers that ignore policies are covered by the keyword blocker, or hidden with "Allow only Chrome".
+ * Browsers that ignore policies get no site or keyword rules; "Allow only Chrome" hides them.
  */
 object ChromePolicy {
     const val CHROME = "com.android.chrome"
