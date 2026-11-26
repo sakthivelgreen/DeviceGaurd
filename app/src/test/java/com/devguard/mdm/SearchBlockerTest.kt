@@ -75,6 +75,42 @@ class SearchBlockerTest {
         assertNull(SearchBlocker.blockedSite("google.com/search?q=instagram.com", sites))
     }
 
+    @Test fun removesOnlyTheBlockedWords() {
+        val k = kws("casino", "bad word", "porn*")
+        assertEquals("best hotels", SearchBlocker.removeKeywords("best casino hotels", k))
+        assertEquals("best", SearchBlocker.removeKeywords("best casino ", k))
+        assertEquals("cheap tips", SearchBlocker.removeKeywords("cheap Casino tips", k))
+        assertEquals("a here", SearchBlocker.removeKeywords("a bad word here", k))      // phrase
+        assertEquals("free", SearchBlocker.removeKeywords("free pornography", k))       // * word start
+        assertEquals("occasional", SearchBlocker.removeKeywords("occasional casino ", k)) // whole words only
+        assertEquals("casin", SearchBlocker.removeKeywords("casino casin", k, editing = true)) // unfinished kept
+        assertNull(SearchBlocker.removeKeywords("online%20casino%20site", kws("casino site"))) // can't locate: clear
+    }
+
+    @Test fun readsTheSearchTermsFromAnAddressBar() {
+        assertEquals("best casino hotels", SearchBlocker.queryOf("https://www.google.com/search?q=best+casino+hotels&hl=en"))
+        assertEquals("cats", SearchBlocker.queryOf("google.com/search?client=x&q=cats"))
+        assertEquals("lofi", SearchBlocker.queryOf("youtube.com/results?search_query=lofi"))
+        assertEquals("best casino hotels", SearchBlocker.queryOf("best casino hotels"))   // Chrome shows the terms
+        assertNull(SearchBlocker.queryOf("example.com/page"))                             // a plain address
+    }
+
+    @Test fun researchesOnTheSameSite() {
+        assertEquals("https://www.google.com/search?q=best+hotels&hl=en",
+            SearchBlocker.researchTarget("https://www.google.com/search?q=best+casino+hotels&oq=best+casino&hl=en", "best hotels"))
+        assertEquals("https://youtube.com/results?search_query=lofi",
+            SearchBlocker.researchTarget("youtube.com/results?search_query=casino+lofi", "lofi"))
+        assertEquals("best hotels", SearchBlocker.researchTarget("best casino hotels", "best hotels")) // Chrome shows terms
+        assertNull(SearchBlocker.researchTarget("example.com/page", "x"))
+    }
+
+    @Test fun tidiesPunctuationAndKeepsUnfinishedWords() {
+        assertEquals("best, cheap", SearchBlocker.removeKeywords("best casino, cheap", kws("casino")))
+        assertEquals("hotels", SearchBlocker.removeKeywords("casino, hotels", kws("casino")))
+        assertNull(SearchBlocker.removeKeywords("ass", kws("ass"), editing = true))   // still being typed
+        assertEquals("", SearchBlocker.removeKeywords("ass ", kws("ass"), editing = true))
+    }
+
     @Test fun nothingToMatch() {
         assertNull(SearchBlocker.match("anything", emptyList()))
         assertNull(SearchBlocker.match("", kws("casino")))
